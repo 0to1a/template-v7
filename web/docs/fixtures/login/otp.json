@@ -1,0 +1,18 @@
+{
+	"title": "Enter your code",
+	"description": "Second step of the login flow. Only reachable with a pending email carried over in memory from /login; a fresh deep link redirects back.",
+	"auth": "public",
+	"states": {
+		"idle": {
+			"visit": "/login",
+			"fill": { "input[name=email]": "person@example.com" },
+			"submit": "button[type=submit]",
+			"api": {
+				"POST /api/auth/request-login": null
+			}
+		},
+		"no-pending-email": {
+			"visit": "/login/otp"
+		}
+	}
+}

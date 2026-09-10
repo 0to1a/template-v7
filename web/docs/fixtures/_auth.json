@@ -1,0 +1,8 @@
+{
+	"api": {
+		"GET /api/profile": {
+			"email": "person@example.com",
+			"display_name": "Ada Lovelace"
+		}
+	}
+}

@@ -1,0 +1,15 @@
+{
+	"title": "Sign in",
+	"description": "Public login form. Requests a one-time code by email; the response is always generic so it never reveals whether the email belongs to an account.",
+	"auth": "public",
+	"states": {
+		"idle": {},
+		"error": {
+			"fill": { "input[name=email]": "person@example.com" },
+			"submit": "button[type=submit]",
+			"api": {
+				"POST /api/auth/request-login": { "$error": "unavailable" }
+			}
+		}
+	}
+}

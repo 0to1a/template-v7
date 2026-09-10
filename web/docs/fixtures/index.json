@@ -1,0 +1,13 @@
+{
+	"title": "Home",
+	"description": "Public landing page. Shows sign-in status read from the local access token and offers logout when signed in.",
+	"auth": "public",
+	"states": {
+		"signed-out": {},
+		"signed-in": {
+			"localStorage": {
+				"template-v7.access_token": "make-docs-fixture-token"
+			}
+		}
+	}
+}
