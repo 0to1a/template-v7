@@ -1,0 +1,13 @@
+{
+	"generatedBy": "make docs",
+	"templates": [
+		{
+			"name": "otp",
+			"path": "internal/template/otp.html",
+			"variables": [
+				"{{.Code}}"
+			],
+			"screenshot": "docs/screenshots/templates/otp.png"
+		}
+	]
+}

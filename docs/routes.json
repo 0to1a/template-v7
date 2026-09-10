@@ -1,0 +1,101 @@
+{
+	"generatedBy": "make docs",
+	"routes": [
+		{
+			"path": "/",
+			"title": "Home",
+			"description": "Public landing page. Shows sign-in status read from the local access token and offers logout when signed in.",
+			"auth": "public",
+			"sourceFile": "web/src/routes/index.tsx",
+			"fixture": "web/docs/fixtures/index.json",
+			"apis": [],
+			"states": [
+				{
+					"name": "signed-in",
+					"screenshot": "docs/screenshots/index/signed-in.png",
+					"mockSummary": "Seeds localStorage key(s) template-v7.access_token."
+				},
+				{
+					"name": "signed-out",
+					"screenshot": "docs/screenshots/index/signed-out.png",
+					"mockSummary": "No API calls; static view with no mock data."
+				}
+			]
+		},
+		{
+			"path": "/login",
+			"title": "Sign in",
+			"description": "Public login form. Requests a one-time code by email; the response is always generic so it never reveals whether the email belongs to an account.",
+			"auth": "public",
+			"sourceFile": "web/src/routes/login/index.tsx",
+			"fixture": "web/docs/fixtures/login.json",
+			"apis": [
+				"POST /api/auth/request-login"
+			],
+			"states": [
+				{
+					"name": "error",
+					"screenshot": "docs/screenshots/login/error.png",
+					"mockSummary": "Fills 1 field(s), then submits the form; POST /api/auth/request-login fails with a \"unavailable\" error."
+				},
+				{
+					"name": "idle",
+					"screenshot": "docs/screenshots/login/idle.png",
+					"mockSummary": "No API calls; static view with no mock data."
+				}
+			]
+		},
+		{
+			"path": "/login/otp",
+			"title": "Enter your code",
+			"description": "Second step of the login flow. Only reachable with a pending email carried over in memory from /login; a fresh deep link redirects back.",
+			"auth": "public",
+			"sourceFile": "web/src/routes/login/otp.tsx",
+			"fixture": "web/docs/fixtures/login/otp.json",
+			"apis": [
+				"POST /api/auth/request-login"
+			],
+			"states": [
+				{
+					"name": "idle",
+					"screenshot": "docs/screenshots/login/otp/idle.png",
+					"mockSummary": "Visits /login, then fills 1 field(s), then submits the form; POST /api/auth/request-login returns 204 No Content."
+				},
+				{
+					"name": "no-pending-email",
+					"screenshot": "docs/screenshots/login/otp/no-pending-email.png",
+					"mockSummary": "Visits /login/otp."
+				}
+			]
+		},
+		{
+			"path": "/profile",
+			"title": "Your profile",
+			"description": "Protected page behind the _authenticated layout. Shows the caller's email and lets them edit display_name via PUT /api/profile.",
+			"auth": "required",
+			"sourceFile": "web/src/routes/_authenticated/profile.tsx",
+			"fixture": "web/docs/fixtures/profile.json",
+			"apis": [
+				"GET /api/profile",
+				"PUT /api/profile"
+			],
+			"states": [
+				{
+					"name": "empty",
+					"screenshot": "docs/screenshots/profile/empty.png",
+					"mockSummary": "GET /api/profile returns mock data (email, display_name)."
+				},
+				{
+					"name": "error",
+					"screenshot": "docs/screenshots/profile/error.png",
+					"mockSummary": "Fills 1 field(s), then submits the form; GET /api/profile returns mock data (email, display_name); PUT /api/profile fails with a \"unavailable\" error."
+				},
+				{
+					"name": "filled",
+					"screenshot": "docs/screenshots/profile/filled.png",
+					"mockSummary": "GET /api/profile returns mock data (email, display_name)."
+				}
+			]
+		}
+	]
+}
