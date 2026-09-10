@@ -1,0 +1,43 @@
+# Environment
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Go
+/bin/
+/tmp/
+*.test
+!**/.env.test
+*.out
+coverage.*
+internal/gen/
+
+# Generated frontend / apic output
+web/src/lib/gen/
+web/dist/*
+!web/dist/.gitkeep
+web/src/routeTree.gen.ts
+
+# make docs artifacts (M2) — regenerable, only docs/routes.json is tracked
+docs/route-catalog.html
+docs/screenshots/
+
+# Frontend tooling
+web/node_modules/
+web/.tanstack/
+web/test-results/
+web/vite.config.ts.timestamp-*
+
+# Local agent tooling
+.mcp.json
+.claude/
+.superpowers/
+docs/superpowers/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.osgrep

@@ -1,0 +1,46 @@
+# CI mirrors local work: bootstrap installs, check validates. If it passes
+# locally it passes here, and vice versa. The one divergence: sqlc
+# runs as a prebuilt binary (same version as go.mod) instead of `go tool`,
+# because compiling it from source costs ~2 minutes on a cold Go cache.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+
+      # Version must match the sqlc tool version pinned in go.mod (github.com/sqlc-dev/sqlc).
+      - uses: sqlc-dev/setup-sqlc@bac53b7fb28c039a6c7f5736fd1e89744021bdd6 # v5
+        with:
+          sqlc-version: "1.31.1"
+
+      # apic is a plain Go binary. TODO(before first release): pin @vX.Y.Z once
+      # apic is tagged on GitHub; until then this step fails because the module
+      # is not public yet, and @latest would let a new apic release change the
+      # regenerated code (and apic diff) without any change in this repo.
+      - run: go install github.com/0to1a/apic/cmd/apic@latest
+
+      - run: make bootstrap
+      - run: make check SQLC=sqlc
+
+      # docs/routes.json is the one tracked, CI-gated artifact from `make
+      # docs` (see docs/routes.json): regenerate it and fail if the
+      # working tree's committed copy doesn't match, so a route/state added
+      # or changed without updating docs/routes.json is caught in review.
+      # Chromium is already installed by `make bootstrap` above.
+      - run: make docs
+      - run: git diff --exit-code docs/routes.json
