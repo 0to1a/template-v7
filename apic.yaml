@@ -1,0 +1,51 @@
+version: 1
+service: Service
+out: internal/gen/api
+ts: web/src/lib/gen/api.ts
+
+middlewares:
+  auth:
+    provides: Principal      # from bearer JWT; id = user's public UUID
+
+types:
+  Principal:
+    id: str!
+  Profile:
+    email: str!
+    display_name: str!
+
+groups:
+  - prefix: /
+    use: []
+    routes:
+      - GET /health:
+          name: GetHealth
+          resp:
+            status: str!
+
+  - prefix: /api/auth          # public: no use: [auth]
+    use: []
+    routes:
+      - POST /request-login:
+          name: RequestLogin
+          body:
+            email: str!      # 204; generic response does not reveal account existence
+      - POST /submit-login:
+          name: SubmitLogin
+          body:
+            email: str!
+            code: str!
+          resp:
+            access_token: str!
+
+  - prefix: /api
+    use: [auth]
+    routes:
+      - GET /profile:
+          name: GetProfile
+          resp: Profile
+      - PUT /profile:
+          name: UpdateProfile
+          body:
+            display_name: str   # optional; absent or empty clears the name; trimmed server-side
+          resp: Profile
