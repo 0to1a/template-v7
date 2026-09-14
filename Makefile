@@ -33,6 +33,7 @@ GOFMT_PATHS := cmd internal db/embed.go web/embed.go
 
 GO_REQUIRED := 1.27
 BUN_PINNED := 1.4.0
+PLAYWRIGHT_INSTALL_ARGS ?=
 
 help: ## List available commands
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -59,7 +60,7 @@ bootstrap: _check-tools ## Install/download all dependencies (the only target th
 	@echo "==> installing web dependencies"
 	cd web && bun install --frozen-lockfile
 	@echo "==> installing Playwright browser (used by make docs)"
-	cd web && bunx playwright install chromium
+	cd web && bunx playwright install chromium $(PLAYWRIGHT_INSTALL_ARGS)
 	@echo "==> bootstrap done"
 
 # sqlc defaults to the go.mod-pinned tool, compiled on demand by the Go
