@@ -29,10 +29,10 @@ jobs:
         with:
           sqlc-version: "1.31.1"
 
-      - name: Install apic v0.1.0
+      - name: Install apic v0.2.0
         run: |
-          curl -fsSLO https://github.com/0to1a/apic/releases/download/v0.1.0/apic-linux-amd64
-          echo "150248119745090065a40fa0e4aa6309cfd0eb8c490b737c5241dac8c2ca2e04  apic-linux-amd64" | sha256sum -c -
+          curl -fsSLO https://github.com/0to1a/apic/releases/download/v0.2.0/apic-linux-amd64
+          echo "4bb7919fbd97e091e7dd1b8e1f47162a9f13160f69948557afc52a1d75498aaa  apic-linux-amd64" | sha256sum -c -
           sudo install apic-linux-amd64 /usr/local/bin/apic
 
       - run: make bootstrap PLAYWRIGHT_INSTALL_ARGS=--only-shell

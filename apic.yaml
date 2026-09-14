@@ -7,6 +7,10 @@ middlewares:
   auth:
     provides: Principal      # from bearer JWT; id = user's public UUID
 
+crons:
+  - check-database:
+      every: 10m
+
 types:
   Principal:
     id: str!

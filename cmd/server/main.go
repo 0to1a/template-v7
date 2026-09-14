@@ -80,10 +80,13 @@ func run() error {
 	}
 
 	svc := service{
-		healthService: health.NewService(),
+		healthService: health.NewService(pool),
 		authService:   auth.NewService(auth.NewRepository(queries), loginCodeSender, jwtManager, cfg.IsGuestRegistration),
 		userService:   user.NewService(user.NewRepository(queries)),
 	}
+
+	// Jobs declared under apic.yaml crons:; stops when ctx is cancelled.
+	go gen.RunCrons(ctx, svc)
 
 	// Which routes need auth is declared in apic.yaml (group use: [auth]).
 	mux := http.NewServeMux()
