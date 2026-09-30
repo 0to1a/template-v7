@@ -16,7 +16,8 @@ export const Route = createFileRoute('/login/otp')({
 
 function OtpComponent() {
 	const navigate = useNavigate();
-	const email = getPendingEmail();
+	// Read once: finishLogin clears it before navigating, which would re-trigger the effect below
+	const [email] = useState(getPendingEmail);
 
 	// No email means hard refresh; restart the flow
 	useEffect(() => {
