@@ -1,14 +1,44 @@
 {
 	"title": "Sign in",
-	"description": "Public login form. Requests a one-time code by email; the response is always generic so it never reveals whether the email belongs to an account.",
+	"description": "Public login form. Offers Google sign-in when FIREBASE_CONFIG is set, and a one-time code by email; the email response is always generic so it never reveals whether the email belongs to an account.",
 	"auth": "public",
 	"states": {
-		"idle": {},
+		"idle": {
+			"api": {
+				"GET /api/auth/config": {
+					"firebase": {
+						"api_key": "docs-fixture-key",
+						"auth_domain": "example.firebaseapp.com",
+						"project_id": "example",
+						"app_id": "1:0:web:0"
+					}
+				}
+			}
+		},
+		"email-only": {
+			"api": {
+				"GET /api/auth/config": {
+					"firebase": null
+				}
+			}
+		},
 		"error": {
-			"fill": { "input[name=email]": "person@example.com" },
+			"fill": {
+				"input[name=email]": "person@example.com"
+			},
 			"submit": "button[type=submit]",
 			"api": {
-				"POST /api/auth/request-login": { "$error": "unavailable" }
+				"GET /api/auth/config": {
+					"firebase": {
+						"api_key": "docs-fixture-key",
+						"auth_domain": "example.firebaseapp.com",
+						"project_id": "example",
+						"app_id": "1:0:web:0"
+					}
+				},
+				"POST /api/auth/request-login": {
+					"$error": "unavailable"
+				}
 			}
 		}
 	}

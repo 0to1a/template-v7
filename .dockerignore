@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+!.env.example
+bin
+tmp
+graft
+.claude
+.superpowers
+.mcp.json
+internal/gen
+web/node_modules
+web/dist
+web/src/lib/gen
+web/src/routeTree.gen.ts
+web/test-results
+docs/screenshots

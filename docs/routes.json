@@ -25,23 +25,29 @@
 		{
 			"path": "/login",
 			"title": "Sign in",
-			"description": "Public login form. Requests a one-time code by email; the response is always generic so it never reveals whether the email belongs to an account.",
+			"description": "Public login form. Offers Google sign-in when FIREBASE_CONFIG is set, and a one-time code by email; the email response is always generic so it never reveals whether the email belongs to an account.",
 			"auth": "public",
 			"sourceFile": "web/src/routes/login/index.tsx",
 			"fixture": "web/docs/fixtures/login.json",
 			"apis": [
+				"GET /api/auth/config",
 				"POST /api/auth/request-login"
 			],
 			"states": [
 				{
+					"name": "email-only",
+					"screenshot": "docs/screenshots/login/email-only.png",
+					"mockSummary": "GET /api/auth/config returns mock data (firebase)."
+				},
+				{
 					"name": "error",
 					"screenshot": "docs/screenshots/login/error.png",
-					"mockSummary": "Fills 1 field(s), then submits the form; POST /api/auth/request-login fails with a \"unavailable\" error."
+					"mockSummary": "Fills 1 field(s), then submits the form; GET /api/auth/config returns mock data (firebase); POST /api/auth/request-login fails with a \"unavailable\" error."
 				},
 				{
 					"name": "idle",
 					"screenshot": "docs/screenshots/login/idle.png",
-					"mockSummary": "No API calls; static view with no mock data."
+					"mockSummary": "GET /api/auth/config returns mock data (firebase)."
 				}
 			]
 		},
@@ -53,18 +59,19 @@
 			"sourceFile": "web/src/routes/login/otp.tsx",
 			"fixture": "web/docs/fixtures/login/otp.json",
 			"apis": [
+				"GET /api/auth/config",
 				"POST /api/auth/request-login"
 			],
 			"states": [
 				{
 					"name": "idle",
 					"screenshot": "docs/screenshots/login/otp/idle.png",
-					"mockSummary": "Visits /login, then fills 1 field(s), then submits the form; POST /api/auth/request-login returns 204 No Content."
+					"mockSummary": "Visits /login, then fills 1 field(s), then submits the form; GET /api/auth/config returns mock data (firebase); POST /api/auth/request-login returns 204 No Content."
 				},
 				{
 					"name": "no-pending-email",
 					"screenshot": "docs/screenshots/login/otp/no-pending-email.png",
-					"mockSummary": "Visits /login/otp."
+					"mockSummary": "Visits /login/otp; GET /api/auth/config returns mock data (firebase)."
 				}
 			]
 		},

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowRight, Mail } from 'lucide-react';
 
 import { AuthShell } from '@/lib/components/auth-shell';
 import { api } from '@/lib/client';
-import { setPendingEmail } from '@/lib/login';
+import { finishLogin, setPendingEmail } from '@/lib/login';
 import { Button } from '@/lib/components/ui/button';
 import { Input } from '@/lib/components/ui/input';
 import { Label } from '@/lib/components/ui/label';
@@ -19,6 +19,31 @@ function LoginComponent() {
 	const [email, setEmail] = useState('');
 	const [error, setError] = useState('');
 	const mutation = useMutation({ mutationFn: (email: string) => api.requestLogin({ email }) });
+	// Config fetch failing just hides the Google button
+	const firebase = useQuery({
+		queryKey: ['auth-config'],
+		queryFn: () => api.getAuthConfig({})
+	}).data?.firebase;
+	const google = useMutation({
+		mutationFn: async () => {
+			if (!firebase) throw new Error('google login not configured');
+			// Loaded on click so the Firebase SDK stays out of the main bundle
+			const { getGoogleIdToken } = await import('@/lib/google-login');
+			const idToken = await getGoogleIdToken(firebase);
+			return api.googleLogin({ id_token: idToken });
+		}
+	});
+
+	async function signInWithGoogle() {
+		setError('');
+		try {
+			const response = await google.mutateAsync();
+			await finishLogin(response.access_token, (path) => navigate({ to: path as '/' }));
+		} catch (err) {
+			const { isPopupDismissed } = await import('@/lib/google-login');
+			if (!isPopupDismissed(err)) setError("Couldn't sign in with Google. Please try again.");
+		}
+	}
 
 	async function submit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -41,6 +66,24 @@ function LoginComponent() {
 				title="Log in to your account"
 				description="Enter your email address and we'll send you a secure, one-time code. No password needed."
 			>
+				{firebase && (
+					<>
+						<Button
+							variant="outline"
+							className="h-11 w-full"
+							type="button"
+							disabled={google.isPending}
+							onClick={signInWithGoogle}
+						>
+							{google.isPending ? 'Signing in…' : 'Continue with Google'}
+						</Button>
+						<div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+							<span className="h-px flex-1 bg-border" />
+							or
+							<span className="h-px flex-1 bg-border" />
+						</div>
+					</>
+				)}
 				<form className="flex flex-col gap-5" onSubmit={submit}>
 					<div className="flex flex-col gap-2">
 						<Label htmlFor="email">Email address</Label>

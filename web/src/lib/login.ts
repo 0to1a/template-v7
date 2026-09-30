@@ -31,7 +31,15 @@ export async function completeLogin(
 	submitLogin: SubmitLoginFn
 ): Promise<void> {
 	const response = await submitLogin({ email, code });
-	setAccessToken(response.access_token);
+	await finishLogin(response.access_token, navigate);
+}
+
+// Shared tail of every login method
+export async function finishLogin(
+	accessToken: string,
+	navigate: (path: string) => Promise<void> | void
+): Promise<void> {
+	setAccessToken(accessToken);
 	clearPendingEmail();
 	await navigate(postLoginPath);
 }

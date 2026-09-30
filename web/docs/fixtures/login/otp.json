@@ -5,14 +5,34 @@
 	"states": {
 		"idle": {
 			"visit": "/login",
-			"fill": { "input[name=email]": "person@example.com" },
+			"fill": {
+				"input[name=email]": "person@example.com"
+			},
 			"submit": "button[type=submit]",
 			"api": {
+				"GET /api/auth/config": {
+					"firebase": {
+						"api_key": "docs-fixture-key",
+						"auth_domain": "example.firebaseapp.com",
+						"project_id": "example",
+						"app_id": "1:0:web:0"
+					}
+				},
 				"POST /api/auth/request-login": null
 			}
 		},
 		"no-pending-email": {
-			"visit": "/login/otp"
+			"visit": "/login/otp",
+			"api": {
+				"GET /api/auth/config": {
+					"firebase": {
+						"api_key": "docs-fixture-key",
+						"auth_domain": "example.firebaseapp.com",
+						"project_id": "example",
+						"app_id": "1:0:web:0"
+					}
+				}
+			}
 		}
 	}
 }

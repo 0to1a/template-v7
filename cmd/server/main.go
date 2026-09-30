@@ -79,9 +79,19 @@ func run() error {
 		loginCodeSender = auth.NewEmailLoginCodeSender(mailSender)
 	}
 
+	authSvc := auth.NewService(auth.NewRepository(queries), loginCodeSender, jwtManager, cfg.IsGuestRegistration)
+	if fb := cfg.Firebase; fb != nil {
+		authSvc.WithGoogle(gen.FirebaseConfig{
+			ApiKey:     fb.APIKey,
+			AuthDomain: fb.AuthDomain,
+			ProjectID:  fb.ProjectID,
+			AppID:      fb.AppID,
+		}, auth.NewFirebaseVerifier(fb.ProjectID))
+	}
+
 	svc := service{
 		healthService: health.NewService(pool),
-		authService:   auth.NewService(auth.NewRepository(queries), loginCodeSender, jwtManager, cfg.IsGuestRegistration),
+		authService:   authSvc,
 		userService:   user.NewService(user.NewRepository(queries)),
 	}
 

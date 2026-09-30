@@ -223,3 +223,51 @@ func TestSubmitLogin_TC005_4(t *testing.T) {
 		t.Fatalf("issued token failed validation: %v", err)
 	}
 }
+
+type fakeVerifier struct{ email string }
+
+func (f fakeVerifier) VerifyIDToken(context.Context, string) (string, error) {
+	if f.email == "" {
+		return "", errInvalidToken
+	}
+	return f.email, nil
+}
+
+func TestGoogleLogin(t *testing.T) {
+	ctx := context.Background()
+	cfg := gen.FirebaseConfig{ProjectID: "p"}
+
+	disabled, _ := newTestService(t, fixedTime)
+	if _, err := disabled.GoogleLogin(ctx, &gen.GoogleLoginRequest{IDToken: "x"}); !isCode(err, gen.FailedPrecondition) {
+		t.Fatalf("not configured: err = %v", err)
+	}
+
+	service, _ := newTestService(t, fixedTime)
+	service.WithGoogle(cfg, fakeVerifier{email: " User@Example.com "})
+	resp, err := service.GoogleLogin(ctx, &gen.GoogleLoginRequest{IDToken: "x"})
+	if err != nil {
+		t.Fatalf("existing user: %v", err)
+	}
+	if principal, _ := service.jwtManager.Parse(resp.AccessToken); principal.PublicUUID != testUUID {
+		t.Fatalf("subject = %s, want %s", principal.PublicUUID, testUUID)
+	}
+
+	service.WithGoogle(cfg, fakeVerifier{})
+	if _, err := service.GoogleLogin(ctx, &gen.GoogleLoginRequest{IDToken: "bad"}); !isCode(err, gen.Unauthenticated) {
+		t.Fatalf("bad token: err = %v", err)
+	}
+
+	service.WithGoogle(cfg, fakeVerifier{email: "new@example.com"})
+	if _, err := service.GoogleLogin(ctx, &gen.GoogleLoginRequest{IDToken: "x"}); !isCode(err, gen.Unauthenticated) {
+		t.Fatalf("unknown user without guest registration: err = %v", err)
+	}
+
+	guest, _ := newTestServiceWithGuestRegistration(t, fixedTime, true)
+	guest.WithGoogle(cfg, fakeVerifier{email: "new@example.com"})
+	if _, err := guest.GoogleLogin(ctx, &gen.GoogleLoginRequest{IDToken: "x"}); err != nil {
+		t.Fatalf("unknown user with guest registration: %v", err)
+	}
+	if _, err := guest.repo.GetActiveUserByEmail(ctx, "new@example.com"); err != nil {
+		t.Fatalf("guest user not created: %v", err)
+	}
+}
