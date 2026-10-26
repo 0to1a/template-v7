@@ -38,7 +38,7 @@ function LoginComponent() {
 		setError('');
 		try {
 			const response = await google.mutateAsync();
-			await finishLogin(response.access_token, (path) => navigate({ to: path as '/' }));
+			await finishLogin(response, (path) => navigate({ to: path as '/' }));
 		} catch (err) {
 			const { isPopupDismissed } = await import('@/lib/google-login');
 			if (!isPopupDismissed(err)) setError("Couldn't sign in with Google. Please try again.");

@@ -10,7 +10,15 @@ import (
 )
 
 type fakeRepo struct {
-	users map[string]User
+	users         map[string]User
+	refreshTokens map[string]*fakeRefreshToken
+	now           func() time.Time
+}
+
+type fakeRefreshToken struct {
+	publicUUID string
+	expiresAt  time.Time
+	revoked    bool
 }
 
 func (f *fakeRepo) GetActiveUserByEmail(_ context.Context, normalizedEmail string) (User, error) {
@@ -29,6 +37,33 @@ func (f *fakeRepo) CreateUser(_ context.Context, normalizedEmail string) (User, 
 	user := User{PublicUUID: "guest-" + normalizedEmail, Email: normalizedEmail}
 	f.users[normalizedEmail] = user
 	return user, nil
+}
+
+func (f *fakeRepo) CreateRefreshToken(_ context.Context, publicUUID string, tokenHash []byte, expiresAt time.Time) error {
+	f.refreshTokens[string(tokenHash)] = &fakeRefreshToken{publicUUID: publicUUID, expiresAt: expiresAt}
+	return nil
+}
+
+func (f *fakeRepo) RevokeRefreshToken(_ context.Context, tokenHash []byte) (string, error) {
+	token, ok := f.refreshTokens[string(tokenHash)]
+	if !ok || token.revoked || !f.now().Before(token.expiresAt) {
+		return "", ErrRefreshTokenNotFound
+	}
+	token.revoked = true
+	return token.publicUUID, nil
+}
+
+func (f *fakeRepo) RevokeRefreshTokensIfReused(_ context.Context, tokenHash []byte) error {
+	reused, ok := f.refreshTokens[string(tokenHash)]
+	if !ok || !reused.revoked {
+		return nil
+	}
+	for _, token := range f.refreshTokens {
+		if token.publicUUID == reused.publicUUID {
+			token.revoked = true
+		}
+	}
+	return nil
 }
 
 type recordingDelivery struct {
@@ -58,11 +93,12 @@ func newTestServiceWithGuestRegistration(t *testing.T, now time.Time, isGuestReg
 	repo := &fakeRepo{users: map[string]User{
 		"admin@localhost":  {PublicUUID: adminUUID, Email: "admin@localhost"},
 		"user@example.com": {PublicUUID: testUUID, Email: "user@example.com"},
-	}}
+	}, refreshTokens: map[string]*fakeRefreshToken{}}
 	delivery := &recordingDelivery{}
 
 	service := NewService(repo, delivery, jwtManager, isGuestRegistration)
 	service.now = func() time.Time { return now }
+	repo.now = func() time.Time { return service.now() }
 	return service, delivery
 }
 
@@ -269,5 +305,84 @@ func TestGoogleLogin(t *testing.T) {
 	}
 	if _, err := guest.repo.GetActiveUserByEmail(ctx, "new@example.com"); err != nil {
 		t.Fatalf("guest user not created: %v", err)
+	}
+}
+
+func loginAdmin(t *testing.T, service *Service) *gen.Tokens {
+	t.Helper()
+	tokens, err := service.SubmitLogin(context.Background(), &gen.SubmitLoginRequest{Email: "admin@localhost", Code: "123456"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tokens
+}
+
+func TestRefresh_RotatesToken(t *testing.T) {
+	service, _ := newTestService(t, fixedTime)
+	ctx := context.Background()
+	login := loginAdmin(t, service)
+
+	refreshed, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: login.RefreshToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.RefreshToken == login.RefreshToken {
+		t.Fatal("refresh token was not rotated")
+	}
+	if principal, _ := service.jwtManager.Parse(refreshed.AccessToken); principal.PublicUUID != adminUUID {
+		t.Fatalf("subject = %s, want %s", principal.PublicUUID, adminUUID)
+	}
+	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: refreshed.RefreshToken}); err != nil {
+		t.Fatalf("rotated token rejected: %v", err)
+	}
+}
+
+func TestRefresh_ReuseRevokesAllSessions(t *testing.T) {
+	service, _ := newTestService(t, fixedTime)
+	ctx := context.Background()
+	stolen := loginAdmin(t, service)
+	other := loginAdmin(t, service)
+
+	refreshed, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: stolen.RefreshToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: stolen.RefreshToken}); !isCode(err, gen.Unauthenticated) {
+		t.Fatalf("replayed token: err = %v, want Unauthenticated", err)
+	}
+	for name, token := range map[string]string{"rotated": refreshed.RefreshToken, "other session": other.RefreshToken} {
+		if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: token}); !isCode(err, gen.Unauthenticated) {
+			t.Fatalf("%s after reuse: err = %v, want Unauthenticated", name, err)
+		}
+	}
+}
+
+func TestRefresh_RejectsExpiredAndUnknown(t *testing.T) {
+	service, _ := newTestService(t, fixedTime)
+	ctx := context.Background()
+	login := loginAdmin(t, service)
+
+	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: "unknown"}); !isCode(err, gen.Unauthenticated) {
+		t.Fatalf("unknown token: err = %v, want Unauthenticated", err)
+	}
+	service.now = func() time.Time { return fixedTime.Add(refreshTokenTTL) }
+	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: login.RefreshToken}); !isCode(err, gen.Unauthenticated) {
+		t.Fatalf("expired token: err = %v, want Unauthenticated", err)
+	}
+}
+
+func TestLogout_RevokesRefreshToken(t *testing.T) {
+	service, _ := newTestService(t, fixedTime)
+	ctx := context.Background()
+	login := loginAdmin(t, service)
+
+	if err := service.Logout(ctx, &gen.LogoutRequest{RefreshToken: login.RefreshToken}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Logout(ctx, &gen.LogoutRequest{RefreshToken: login.RefreshToken}); err != nil {
+		t.Fatalf("second logout: %v", err)
+	}
+	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: login.RefreshToken}); !isCode(err, gen.Unauthenticated) {
+		t.Fatalf("refresh after logout: err = %v, want Unauthenticated", err)
 	}
 }

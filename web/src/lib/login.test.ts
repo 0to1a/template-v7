@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 
-import { clearAccessToken, getAccessToken } from './auth';
+import { clearTokens, getAccessToken, getRefreshToken } from './auth';
 import {
 	completeLogin,
 	getPendingEmail,
@@ -11,14 +11,14 @@ import {
 
 describe('login flow', () => {
 	beforeEach(() => {
-		clearAccessToken();
+		clearTokens();
 		setPendingEmail('');
 	});
 
 	it('TC-001-5 stores the token through the central auth module and redirects home', async () => {
 		const submitLogin: SubmitLoginFn = async (req) => {
 			expect(req).toEqual({ email: 'admin@localhost', code: '123456' });
-			return { access_token: 'issued-token' };
+			return { access_token: 'issued-token', refresh_token: 'issued-refresh' };
 		};
 		const navigatedTo: string[] = [];
 		const navigate = async (path: string) => {
@@ -29,6 +29,7 @@ describe('login flow', () => {
 		await completeLogin('admin@localhost', '123456', navigate, submitLogin);
 
 		expect(getAccessToken()).toBe('issued-token');
+		expect(getRefreshToken()).toBe('issued-refresh');
 		expect(getPendingEmail()).toBe('');
 		expect(navigatedTo).toEqual([postLoginPath]);
 	});

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { ArrowRight, Check, Layers3, ShieldCheck, Sparkles, Zap } from 'lucide-react';
 
-import { isAuthenticated, logout } from '@/lib/auth';
+import { isAuthenticated } from '@/lib/auth';
+import { logout } from '@/lib/client';
 import { Button } from '@/lib/components/ui/button';
 
 export const Route = createFileRoute('/')({

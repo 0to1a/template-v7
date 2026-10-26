@@ -19,6 +19,9 @@ types:
     auth_domain: str!
     project_id: str!
     app_id: str!
+  Tokens:
+    access_token: str!    # short-lived JWT
+    refresh_token: str!   # opaque, single-use; rotated on every refresh
   Profile:
     email: str!
     display_name: str!
@@ -44,8 +47,7 @@ groups:
           body:
             email: str!
             code: str!
-          resp:
-            access_token: str!
+          resp: Tokens
       - GET /config:
           name: GetAuthConfig
           resp:
@@ -54,8 +56,16 @@ groups:
           name: GoogleLogin
           body:
             id_token: str!   # Firebase ID token from the Google popup
-          resp:
-            access_token: str!
+          resp: Tokens
+      - POST /refresh:
+          name: Refresh
+          body:
+            refresh_token: str!
+          resp: Tokens
+      - POST /logout:
+          name: Logout
+          body:
+            refresh_token: str!   # 204 even if already revoked or unknown
 
   - prefix: /api
     use: [auth]

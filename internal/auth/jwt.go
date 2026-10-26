@@ -8,7 +8,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const accessTokenTTL = 24 * time.Hour
+// Short: a stolen access token can't be revoked, only waited out; the SPA refreshes on 401
+const accessTokenTTL = 15 * time.Minute
 
 var errInvalidToken = errors.New("auth: invalid token")
 

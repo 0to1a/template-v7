@@ -1,5 +1,6 @@
 // Stored only via central auth module, never touched here
-import { setAccessToken } from './auth';
+import { setTokens } from './auth';
+import type { Tokens } from './gen/api';
 
 let pendingEmail = '';
 
@@ -18,10 +19,7 @@ export function clearPendingEmail(): void {
 export const postLoginPath = '/' as const;
 
 // App passes api.submitLogin; tests pass a fake
-export type SubmitLoginFn = (req: {
-	email: string;
-	code: string;
-}) => Promise<{ access_token: string }>;
+export type SubmitLoginFn = (req: { email: string; code: string }) => Promise<Tokens>;
 
 // Injected so tests can pass a spy for navigate
 export async function completeLogin(
@@ -31,15 +29,15 @@ export async function completeLogin(
 	submitLogin: SubmitLoginFn
 ): Promise<void> {
 	const response = await submitLogin({ email, code });
-	await finishLogin(response.access_token, navigate);
+	await finishLogin(response, navigate);
 }
 
 // Shared tail of every login method
 export async function finishLogin(
-	accessToken: string,
+	tokens: Tokens,
 	navigate: (path: string) => Promise<void> | void
 ): Promise<void> {
-	setAccessToken(accessToken);
+	setTokens(tokens);
 	clearPendingEmail();
 	await navigate(postLoginPath);
 }
