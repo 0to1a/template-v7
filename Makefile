@@ -32,7 +32,7 @@ GO_PKGS := ./cmd/... ./internal/... ./db ./web
 GOFMT_PATHS := cmd internal db/embed.go web/embed.go
 
 GO_REQUIRED := 1.27
-BUN_PINNED := 1.4.0
+BUN_PINNED := 1.4
 PLAYWRIGHT_INSTALL_ARGS ?=
 
 help: ## List available commands
@@ -48,10 +48,10 @@ _check-tools:
 	esac
 	@command -v bun >/dev/null 2>&1 || { echo "error: 'bun' is required but was not found in PATH" >&2; exit 1; }
 	@bun_version="$$(bun --version)"; \
-	if [ "$$bun_version" != "$(BUN_PINNED)" ]; then \
-		echo "error: this project pins bun to $(BUN_PINNED), but 'bun --version' reports $$bun_version" >&2; \
-		exit 1; \
-	fi
+	case "$$bun_version" in \
+		$(BUN_PINNED).*) ;; \
+		*) echo "error: this project requires bun $(BUN_PINNED).x, but 'bun --version' reports $$bun_version" >&2; exit 1;; \
+	esac
 	@command -v apic >/dev/null 2>&1 || { echo "error: 'apic' is required but was not found in PATH; install with: go install github.com/0to1a/apic/cmd/apic@latest" >&2; exit 1; }
 
 bootstrap: _check-tools ## Install/download all dependencies (the only target that installs)
