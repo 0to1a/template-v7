@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from '@tanstack/react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { AppProviders } from './lib/client';
 import { router } from './router';
 import './index.css';
 
@@ -13,8 +13,8 @@ if (!rootEl) {
 
 createRoot(rootEl).render(
 	<StrictMode>
-		<AppProviders>
+		<QueryClientProvider client={new QueryClient()}>
 			<RouterProvider router={router} />
-		</AppProviders>
+		</QueryClientProvider>
 	</StrictMode>
 );

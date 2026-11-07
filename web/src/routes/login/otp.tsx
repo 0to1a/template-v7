@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, KeyRound } from 'lucide-react';
 
 import { AuthShell } from '@/lib/components/auth-shell';
 import { api } from '@/lib/client';
-import { completeLogin, getPendingEmail } from '@/lib/login';
+import { finishLogin, getPendingEmail } from '@/lib/login';
 import { Button } from '@/lib/components/ui/button';
 import { Input } from '@/lib/components/ui/input';
 import { Label } from '@/lib/components/ui/label';
@@ -32,12 +32,7 @@ function OtpComponent() {
 		event.preventDefault();
 		setError('');
 		try {
-			await completeLogin(
-				email,
-				code,
-				(path) => navigate({ to: path as '/' }),
-				mutation.mutateAsync
-			);
+			await finishLogin(await mutation.mutateAsync({ email, code }), navigate);
 		} catch {
 			// Invalid email and code deliberately look the same
 			setError('Invalid email or code.');

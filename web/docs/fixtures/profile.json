@@ -1,7 +1,6 @@
 {
 	"title": "Your profile",
 	"description": "Protected page behind the _authenticated layout. Shows the caller's email and lets them edit display_name via PUT /api/profile.",
-	"auth": "required",
 	"states": {
 		"filled": {
 			"api": {
@@ -20,14 +19,18 @@
 			}
 		},
 		"error": {
-			"fill": { "input[name=display_name]": "Grace Hopper" },
+			"fill": {
+				"input[name=display_name]": "Grace Hopper"
+			},
 			"submit": "button[type=submit]",
 			"api": {
 				"GET /api/profile": {
 					"email": "ada@example.com",
 					"display_name": "Ada Lovelace"
 				},
-				"PUT /api/profile": { "$error": "unavailable" }
+				"PUT /api/profile": {
+					"$error": "unavailable"
+				}
 			}
 		}
 	}

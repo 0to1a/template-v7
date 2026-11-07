@@ -13,7 +13,7 @@
 				{
 					"name": "signed-in",
 					"screenshot": "docs/screenshots/index/signed-in.png",
-					"mockSummary": "Seeds localStorage key(s) template-v7.access_token."
+					"mockSummary": "Signed in."
 				},
 				{
 					"name": "signed-out",

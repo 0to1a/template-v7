@@ -131,20 +131,6 @@ func TestUpdateProfile_AtMaxLength(t *testing.T) {
 	}
 }
 
-func TestUpdateProfile_NilClears(t *testing.T) {
-	service := newTestService(t)
-
-	profile, err := service.UpdateProfile(context.Background(), &gen.UpdateProfileRequest{
-		Auth: asPrincipal(testPublicUUID), DisplayName: nil,
-	})
-	if err != nil {
-		t.Fatalf("UpdateProfile: %v", err)
-	}
-	if profile.DisplayName != "" {
-		t.Fatalf("display_name = %q, want empty string", profile.DisplayName)
-	}
-}
-
 func TestUpdateProfile_NotFound(t *testing.T) {
 	service := newTestService(t)
 

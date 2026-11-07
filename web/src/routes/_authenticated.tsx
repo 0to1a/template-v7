@@ -1,9 +1,11 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router';
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
 
-import { requireAuthBeforeLoad } from '@/lib/route-guards';
+import { isAuthenticated } from '@/lib/auth';
 
-// Pathless layout: no URL segment, just auth guard
+// Pathless layout: no URL segment, just the auth guard
 export const Route = createFileRoute('/_authenticated')({
-	beforeLoad: requireAuthBeforeLoad,
+	beforeLoad: () => {
+		if (!isAuthenticated()) throw redirect({ to: '/login' });
+	},
 	component: () => <Outlet />
 });

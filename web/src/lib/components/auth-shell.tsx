@@ -62,7 +62,7 @@ export function AuthShell({ eyebrow, title, description, children }: AuthShellPr
 					</div>
 				</div>
 
-				<p className="relative text-xs text-zinc-500">Template v6 · Built for modern products</p>
+				<p className="relative text-xs text-zinc-500">Template · Built for modern products</p>
 			</aside>
 		</main>
 	);

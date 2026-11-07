@@ -5,6 +5,7 @@ import { ArrowRight, Mail } from 'lucide-react';
 
 import { AuthShell } from '@/lib/components/auth-shell';
 import { api } from '@/lib/client';
+import type { FirebaseConfig } from '@/lib/gen/api';
 import { finishLogin, setPendingEmail } from '@/lib/login';
 import { Button } from '@/lib/components/ui/button';
 import { Input } from '@/lib/components/ui/input';
@@ -25,23 +26,21 @@ function LoginComponent() {
 		queryFn: () => api.getAuthConfig({})
 	}).data?.firebase;
 	const google = useMutation({
-		mutationFn: async () => {
-			if (!firebase) throw new Error('google login not configured');
+		mutationFn: async (config: FirebaseConfig) => {
 			// Loaded on click so the Firebase SDK stays out of the main bundle
 			const { getGoogleIdToken } = await import('@/lib/google-login');
-			const idToken = await getGoogleIdToken(firebase);
-			return api.googleLogin({ id_token: idToken });
+			const idToken = await getGoogleIdToken(config);
+			return idToken === null ? null : api.googleLogin({ id_token: idToken });
 		}
 	});
 
-	async function signInWithGoogle() {
+	async function signInWithGoogle(config: FirebaseConfig) {
 		setError('');
 		try {
-			const response = await google.mutateAsync();
-			await finishLogin(response, (path) => navigate({ to: path as '/' }));
-		} catch (err) {
-			const { isPopupDismissed } = await import('@/lib/google-login');
-			if (!isPopupDismissed(err)) setError("Couldn't sign in with Google. Please try again.");
+			const tokens = await google.mutateAsync(config);
+			if (tokens) await finishLogin(tokens, navigate);
+		} catch {
+			setError("Couldn't sign in with Google. Please try again.");
 		}
 	}
 
@@ -73,7 +72,7 @@ function LoginComponent() {
 							className="h-11 w-full"
 							type="button"
 							disabled={google.isPending}
-							onClick={signInWithGoogle}
+							onClick={() => signInWithGoogle(firebase)}
 						>
 							{google.isPending ? 'Signing in…' : 'Continue with Google'}
 						</Button>

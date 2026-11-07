@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"project/internal/gen/db"
-	"project/internal/platform/database"
 )
 
 // ErrUserNotFound means the lookup found no active user.
@@ -69,8 +68,8 @@ func (r *repository) CreateUser(ctx context.Context, normalizedEmail string) (Us
 }
 
 func (r *repository) CreateRefreshToken(ctx context.Context, publicUUID string, tokenHash []byte, expiresAt time.Time) error {
-	id, err := database.ParsePublicUUID(publicUUID)
-	if err != nil {
+	var id pgtype.UUID
+	if err := id.Scan(publicUUID); err != nil {
 		return err
 	}
 	return r.queries.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{

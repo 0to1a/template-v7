@@ -11,7 +11,7 @@ import (
 	goosedb "github.com/pressly/goose/v3/database"
 )
 
-// Up only, never rolls back; failure must abort startup
+// Up only, never rolls back
 func Migrate(ctx context.Context, pool *pgxpool.Pool, migrations fs.FS) error {
 	sqldb := stdlib.OpenDBFromPool(pool)
 	defer sqldb.Close()

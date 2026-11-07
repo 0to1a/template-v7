@@ -24,9 +24,6 @@ export default defineConfig({
 			'@': path.resolve(import.meta.dirname, './src')
 		}
 	},
-	build: {
-		outDir: 'dist'
-	},
 	server: {
 		proxy: {
 			'/api': backendTarget,
@@ -35,7 +32,8 @@ export default defineConfig({
 	},
 	test: {
 		environment: 'jsdom',
-		globals: false,
+		// Node's own (file-less, broken) localStorage would shadow jsdom's
+		execArgv: ['--no-experimental-webstorage'],
 		include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}']
 	}
 });

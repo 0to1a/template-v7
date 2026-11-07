@@ -9,7 +9,6 @@ import (
 	gen "project/internal/gen/api"
 )
 
-// Empty string is allowed: means no display name set
 const maxDisplayNameLength = 100
 
 // Acting user always comes from req.Auth (set by the auth middleware),
@@ -33,7 +32,7 @@ func (s *Service) GetProfile(ctx context.Context, req *gen.GetProfileRequest) (*
 	return toGen(profile), nil
 }
 
-// Empty trimmed value clears the name; over max is rejected
+// Absent, empty or blank clears the name
 func (s *Service) UpdateProfile(ctx context.Context, req *gen.UpdateProfileRequest) (*gen.Profile, error) {
 	var name string
 	if req.DisplayName != nil {

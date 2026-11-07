@@ -25,8 +25,7 @@ type (
 	userService   = user.Service
 )
 
-// One embedded field per domain; together they satisfy gen.Service. Method
-// names must not collide across domains — the compiler enforces it.
+// One embedded field per domain; together they satisfy gen.Service
 type service struct {
 	*healthService
 	*authService
@@ -45,6 +44,20 @@ func run() error {
 		return err
 	}
 
+	// Validate the rest of the config before touching the database
+	jwtManager, err := auth.NewJWTManager(cfg.JWTSecret)
+	if err != nil {
+		return err
+	}
+	firebase, err := auth.ParseFirebaseConfig(cfg.FirebaseConfig)
+	if err != nil {
+		return err
+	}
+	mailSender, err := mail.New(cfg.MailURL)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 
 	pool, err := database.Connect(ctx, cfg.DatabaseURL)
@@ -53,7 +66,6 @@ func run() error {
 	}
 	defer pool.Close()
 
-	// Up-only; failure aborts startup, never guesses schema
 	migrations, err := fs.Sub(dbfs.Migrations, "migrations")
 	if err != nil {
 		return err
@@ -64,29 +76,9 @@ func run() error {
 
 	queries := db.New(pool)
 
-	jwtManager, err := auth.NewJWTManager(cfg.JWTSecret)
-	if err != nil {
-		return err
-	}
-
-	// Unset MAIL_URL discards codes; malformed aborts startup
-	mailSender, err := mail.NewSMTPSenderFromURL(cfg.MailURL)
-	if err != nil {
-		return err
-	}
-	var loginCodeSender auth.LoginCodeSender = auth.NoopLoginCodeSender{}
-	if mailSender != nil {
-		loginCodeSender = auth.NewEmailLoginCodeSender(mailSender)
-	}
-
-	authSvc := auth.NewService(auth.NewRepository(queries), loginCodeSender, jwtManager, cfg.IsGuestRegistration)
-	if fb := cfg.Firebase; fb != nil {
-		authSvc.WithGoogle(gen.FirebaseConfig{
-			ApiKey:     fb.APIKey,
-			AuthDomain: fb.AuthDomain,
-			ProjectID:  fb.ProjectID,
-			AppID:      fb.AppID,
-		}, auth.NewFirebaseVerifier(fb.ProjectID))
+	authSvc := auth.NewService(auth.NewRepository(queries), auth.NewEmailLoginCodeSender(mailSender), jwtManager, cfg.IsGuestRegistration)
+	if firebase != nil {
+		authSvc.WithGoogle(*firebase, auth.NewFirebaseVerifier(firebase.ProjectID))
 	}
 
 	svc := service{
@@ -95,10 +87,9 @@ func run() error {
 		userService:   user.NewService(user.NewRepository(queries)),
 	}
 
-	// Jobs declared under apic.yaml crons:; stops when ctx is cancelled.
+	// Jobs declared under apic.yaml crons:; stops when ctx is cancelled
 	go gen.RunCrons(ctx, svc)
 
-	// Which routes need auth is declared in apic.yaml (group use: [auth]).
 	mux := http.NewServeMux()
 	if err := gen.RegisterRoutes(mux, svc, gen.Middlewares{Auth: auth.Middleware(jwtManager)}); err != nil {
 		return err

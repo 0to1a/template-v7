@@ -22,7 +22,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.4.0
+          bun-version-file: web/package.json
 
       # Version must match the sqlc tool version pinned in go.mod (github.com/sqlc-dev/sqlc).
       - uses: sqlc-dev/setup-sqlc@bac53b7fb28c039a6c7f5736fd1e89744021bdd6 # v5

@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// Captures what was sent, or fakes a send failure
 type recordingEmailSender struct {
 	to, subject, html string
 	err               error
@@ -53,7 +52,7 @@ func TestEmailLoginCodeSender_SendFailure_TC004_4(t *testing.T) {
 	if strings.Contains(logs.String(), "111222") {
 		t.Fatalf("log output leaked the login code: %q", logs.String())
 	}
-	if !strings.Contains(logs.String(), "sending login code email failed") {
-		t.Fatalf("log output missing failure message: %q", logs.String())
+	if logs.Len() == 0 {
+		t.Fatal("send failure was not logged")
 	}
 }

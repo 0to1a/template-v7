@@ -16,7 +16,7 @@ const refreshTokenTTL = 30 * 24 * time.Hour
 // Unknown, expired, revoked and reused tokens look the same
 var errRefreshUnauthenticated = gen.Error(gen.Unauthenticated, "invalid refresh token")
 
-// Same generic error for unknown users and bad codes
+// Unknown users and bad codes look the same
 var errUnauthenticated = gen.Error(gen.Unauthenticated, "invalid email or code")
 
 // Bad token and unknown account look the same
@@ -26,7 +26,6 @@ type Service struct {
 	repo                Repository
 	delivery            LoginCodeSender
 	jwtManager          *JWTManager
-	now                 func() time.Time
 	isGuestRegistration bool
 
 	// nil = Google login disabled
@@ -34,44 +33,41 @@ type Service struct {
 	verifier IDTokenVerifier
 }
 
-// TOTP secret derived from jwtManager's signing secret
+// Login codes are derived from jwtManager's secret and clock
 func NewService(repo Repository, delivery LoginCodeSender, jwtManager *JWTManager, isGuestRegistration bool) *Service {
 	return &Service{
 		repo:                repo,
 		delivery:            delivery,
 		jwtManager:          jwtManager,
-		now:                 time.Now,
 		isGuestRegistration: isGuestRegistration,
 	}
 }
 
-// Never reveals whether the account already existed; always 204
+// Enables Google login; cfg is served to the SPA as-is
+func (s *Service) WithGoogle(cfg gen.FirebaseConfig, verifier IDTokenVerifier) {
+	s.firebase = &cfg
+	s.verifier = verifier
+}
+
+// Never reveals whether the account exists; always 204
 func (s *Service) RequestLogin(ctx context.Context, req *gen.RequestLoginRequest) error {
 	normalized := normalizeEmail(req.Email)
-
-	user, err := s.repo.GetActiveUserByEmail(ctx, normalized)
+	user, err := s.findOrRegister(ctx, normalized)
 	if errors.Is(err, ErrUserNotFound) {
-		if !s.isGuestRegistration {
-			return nil
-		}
-		user, err = s.repo.CreateUser(ctx, normalized)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 
-	code := s.jwtManager.generateLoginCode(user.PublicUUID, normalized, s.now())
-	// Failure not surfaced: must not leak account existence
+	code := generateCode(s.jwtManager.secret, user.PublicUUID, normalized, s.jwtManager.now())
+	// Failure not surfaced: it would only happen for existing accounts
 	_ = s.delivery.SendLoginCode(ctx, user.Email, code)
 	return nil
 }
 
-// Unknown users and bad codes return the same error
 func (s *Service) SubmitLogin(ctx context.Context, req *gen.SubmitLoginRequest) (*gen.Tokens, error) {
 	normalized := normalizeEmail(req.Email)
-
 	user, err := s.repo.GetActiveUserByEmail(ctx, normalized)
 	if errors.Is(err, ErrUserNotFound) {
 		return nil, errUnauthenticated
@@ -80,10 +76,32 @@ func (s *Service) SubmitLogin(ctx context.Context, req *gen.SubmitLoginRequest) 
 		return nil, err
 	}
 
-	if !s.jwtManager.verifyLoginCode(user.PublicUUID, normalized, req.Code, s.now()) {
+	if !verifyCode(s.jwtManager.secret, user.PublicUUID, normalized, req.Code, s.jwtManager.now()) {
 		return nil, errUnauthenticated
 	}
+	return s.issueTokens(ctx, user.PublicUUID)
+}
 
+func (s *Service) GetAuthConfig(context.Context, *gen.GetAuthConfigRequest) (*gen.GetAuthConfigResponse, error) {
+	return &gen.GetAuthConfigResponse{Firebase: s.firebase}, nil
+}
+
+func (s *Service) GoogleLogin(ctx context.Context, req *gen.GoogleLoginRequest) (*gen.Tokens, error) {
+	if s.firebase == nil {
+		return nil, gen.Error(gen.FailedPrecondition, "google login is not configured")
+	}
+
+	email, err := s.verifier.VerifyIDToken(ctx, req.IDToken)
+	if err != nil {
+		return nil, errGoogleUnauthenticated
+	}
+	user, err := s.findOrRegister(ctx, normalizeEmail(email))
+	if errors.Is(err, ErrUserNotFound) {
+		return nil, errGoogleUnauthenticated
+	}
+	if err != nil {
+		return nil, err
+	}
 	return s.issueTokens(ctx, user.PublicUUID)
 }
 
@@ -112,6 +130,15 @@ func (s *Service) Logout(ctx context.Context, req *gen.LogoutRequest) error {
 	return err
 }
 
+// Guest registration decides whether an unknown email gets an account
+func (s *Service) findOrRegister(ctx context.Context, normalizedEmail string) (User, error) {
+	user, err := s.repo.GetActiveUserByEmail(ctx, normalizedEmail)
+	if errors.Is(err, ErrUserNotFound) && s.isGuestRegistration {
+		return s.repo.CreateUser(ctx, normalizedEmail)
+	}
+	return user, err
+}
+
 func (s *Service) issueTokens(ctx context.Context, publicUUID string) (*gen.Tokens, error) {
 	accessToken, err := s.jwtManager.Issue(publicUUID)
 	if err != nil {
@@ -123,7 +150,8 @@ func (s *Service) issueTokens(ctx context.Context, publicUUID string) (*gen.Toke
 		return nil, err
 	}
 	refreshToken := base64.RawURLEncoding.EncodeToString(raw)
-	if err := s.repo.CreateRefreshToken(ctx, publicUUID, hashRefreshToken(refreshToken), s.now().Add(refreshTokenTTL)); err != nil {
+	expiresAt := s.jwtManager.now().Add(refreshTokenTTL)
+	if err := s.repo.CreateRefreshToken(ctx, publicUUID, hashRefreshToken(refreshToken), expiresAt); err != nil {
 		return nil, err
 	}
 	return &gen.Tokens{AccessToken: accessToken, RefreshToken: refreshToken}, nil
@@ -133,41 +161,4 @@ func (s *Service) issueTokens(ctx context.Context, publicUUID string) (*gen.Toke
 func hashRefreshToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	return sum[:]
-}
-
-// Enables Google login; cfg is served to the SPA as-is
-func (s *Service) WithGoogle(cfg gen.FirebaseConfig, verifier IDTokenVerifier) *Service {
-	s.firebase = &cfg
-	s.verifier = verifier
-	return s
-}
-
-func (s *Service) GetAuthConfig(context.Context, *gen.GetAuthConfigRequest) (*gen.GetAuthConfigResponse, error) {
-	return &gen.GetAuthConfigResponse{Firebase: s.firebase}, nil
-}
-
-// Same account rules as email login: guest registration decides sign-up
-func (s *Service) GoogleLogin(ctx context.Context, req *gen.GoogleLoginRequest) (*gen.Tokens, error) {
-	if s.firebase == nil {
-		return nil, gen.Error(gen.FailedPrecondition, "google login is not configured")
-	}
-
-	email, err := s.verifier.VerifyIDToken(ctx, req.IDToken)
-	if err != nil {
-		return nil, errGoogleUnauthenticated
-	}
-	normalized := normalizeEmail(email)
-
-	user, err := s.repo.GetActiveUserByEmail(ctx, normalized)
-	if errors.Is(err, ErrUserNotFound) {
-		if !s.isGuestRegistration {
-			return nil, errGoogleUnauthenticated
-		}
-		user, err = s.repo.CreateUser(ctx, normalized)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return s.issueTokens(ctx, user.PublicUUID)
 }

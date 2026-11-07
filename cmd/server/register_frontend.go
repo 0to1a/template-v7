@@ -9,7 +9,6 @@ import (
 	"project/web"
 )
 
-// Own file: keeps main.go one-call-per-concern
 func registerFrontend(mux *http.ServeMux) error {
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {

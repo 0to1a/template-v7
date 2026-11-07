@@ -42,13 +42,13 @@ function ProfileComponent() {
 			await mutation.mutateAsync(displayName);
 			setSaved(true);
 		} catch {
-			// Surfaced below via mutation.isError.
+			// Shown via mutation.isError
 		}
 	}
 
 	return (
 		<>
-			<title>Your profile · Template v7</title>
+			<title>Your profile · Template</title>
 			<main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center p-8">
 				<Card>
 					<CardHeader>
@@ -77,9 +77,7 @@ function ProfileComponent() {
 							{mutation.isError && (
 								<p className="text-sm text-destructive">Something went wrong. Please try again.</p>
 							)}
-							{saved && !mutation.isError && (
-								<p className="text-sm text-muted-foreground">Saved.</p>
-							)}
+							{saved && <p className="text-sm text-muted-foreground">Saved.</p>}
 
 							<Button type="submit" disabled={profileQuery.isPending || mutation.isPending}>
 								{mutation.isPending ? 'Saving…' : 'Save'}

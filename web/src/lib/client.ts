@@ -1,7 +1,4 @@
 // Only place that builds the API client and attaches the bearer header
-import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './auth';
 import { ApiError, createClient } from './gen/api';
 
@@ -28,14 +25,17 @@ function refreshTokens(staleAccessToken: string): Promise<boolean> {
 		if (current !== staleAccessToken) return current !== null;
 		const refresh_token = getRefreshToken();
 		try {
-			if (!refresh_token) throw new ApiError('no refresh token', 'UNAUTHENTICATED', 401);
-			setTokens(await client.refresh({ refresh_token }));
-			return true;
+			if (refresh_token) {
+				setTokens(await client.refresh({ refresh_token }));
+				return true;
+			}
 		} catch (err) {
-			// Dropping the tokens sends route guards to /login; network errors keep them for a retry
-			if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') clearTokens();
-			return false;
+			// Network errors keep the tokens for a retry
+			if (!(err instanceof ApiError && err.code === 'UNAUTHENTICATED')) return false;
 		}
+		// Signed out: the next guarded navigation goes to /login
+		clearTokens();
+		return false;
 	}).finally(() => {
 		refreshing = null;
 	});
@@ -73,11 +73,4 @@ export function logout(): void {
 	const refresh_token = getRefreshToken();
 	clearTokens();
 	if (refresh_token) client.logout({ refresh_token }).catch(() => {});
-}
-
-export const queryClient = new QueryClient();
-
-// Mount AppProviders once at the root, above the router.
-export function AppProviders({ children }: { children: ReactNode }) {
-	return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

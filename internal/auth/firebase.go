@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -14,12 +15,38 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	gen "project/internal/gen/api"
 )
 
 // Google's public certs for Firebase ID tokens, keyed by kid
 const firebaseCertsURL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
 
 var maxAgePattern = regexp.MustCompile(`max-age=(\d+)`)
+
+// FIREBASE_CONFIG: base64 of the Firebase console's web config JSON. Empty = Google login disabled.
+func ParseFirebaseConfig(encoded string) (*gen.FirebaseConfig, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("auth: FIREBASE_CONFIG must be base64: %w", err)
+	}
+	var cfg struct {
+		APIKey     string `json:"apiKey"`
+		AuthDomain string `json:"authDomain"`
+		ProjectID  string `json:"projectId"`
+		AppID      string `json:"appId"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("auth: FIREBASE_CONFIG must be JSON: %w", err)
+	}
+	if cfg.APIKey == "" || cfg.AuthDomain == "" || cfg.ProjectID == "" || cfg.AppID == "" {
+		return nil, fmt.Errorf("auth: FIREBASE_CONFIG needs apiKey, authDomain, projectId and appId")
+	}
+	return &gen.FirebaseConfig{ApiKey: cfg.APIKey, AuthDomain: cfg.AuthDomain, ProjectID: cfg.ProjectID, AppID: cfg.AppID}, nil
+}
 
 // Returns the verified email behind a Firebase ID token
 type IDTokenVerifier interface {

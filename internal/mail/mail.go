@@ -9,73 +9,50 @@ import (
 	"net/url"
 )
 
-type Config struct {
-	Host     string
-	Port     string
-	Username string
-	Password string
+type Sender struct {
+	host, port, username, password string
 }
 
-// smtp://user:pass@host:port; scheme/host/port required
-func ParseURL(raw string) (Config, error) {
-	u, err := url.Parse(raw)
+// MAIL_URL: smtp://user:pass@host:port. Empty = every Send is discarded.
+func New(rawURL string) (*Sender, error) {
+	if rawURL == "" {
+		return &Sender{}, nil
+	}
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		return Config{}, fmt.Errorf("mail: parsing MAIL_URL: %w", err)
+		return nil, fmt.Errorf("mail: parsing MAIL_URL: %w", err)
 	}
 	if u.Scheme != "smtp" {
-		return Config{}, fmt.Errorf("mail: MAIL_URL scheme must be smtp, got %q", u.Scheme)
+		return nil, fmt.Errorf("mail: MAIL_URL scheme must be smtp, got %q", u.Scheme)
 	}
-	host := u.Hostname()
-	if host == "" {
-		return Config{}, fmt.Errorf("mail: MAIL_URL is missing a host")
+	s := &Sender{host: u.Hostname(), port: u.Port()}
+	if s.host == "" {
+		return nil, fmt.Errorf("mail: MAIL_URL is missing a host")
 	}
-	port := u.Port()
-	if port == "" {
-		return Config{}, fmt.Errorf("mail: MAIL_URL is missing a port")
+	if s.port == "" {
+		return nil, fmt.Errorf("mail: MAIL_URL is missing a port")
 	}
-
-	cfg := Config{Host: host, Port: port}
 	if u.User != nil {
-		cfg.Username = u.User.Username()
-		cfg.Password, _ = u.User.Password()
+		s.username = u.User.Username()
+		s.password, _ = u.User.Password()
 	}
-	return cfg, nil
+	return s, nil
 }
 
-type SMTPSender struct {
-	cfg Config
-}
-
-func NewSMTPSender(cfg Config) *SMTPSender {
-	return &SMTPSender{cfg: cfg}
-}
-
-// Empty raw = no SMTP; malformed non-empty is an error
-func NewSMTPSenderFromURL(raw string) (*SMTPSender, error) {
-	if raw == "" {
-		return nil, nil
+// net/smtp only sends PLAIN auth over localhost or TLS
+func (s *Sender) Send(_ context.Context, to, subject, html string) error {
+	if s.host == "" {
+		return nil
 	}
-	cfg, err := ParseURL(raw)
-	if err != nil {
-		return nil, err
-	}
-	return NewSMTPSender(cfg), nil
-}
-
-// PLAIN auth only over localhost or TLS
-func (s *SMTPSender) Send(_ context.Context, to, subject, html string) error {
-	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
-
 	var auth smtp.Auth
-	if s.cfg.Username != "" {
-		auth = smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
+	if s.username != "" {
+		auth = smtp.PlainAuth("", s.username, s.password, s.host)
 	}
-
-	msg := buildMessage(s.cfg.Username, to, subject, html)
-	return smtp.SendMail(addr, auth, s.cfg.Username, []string{to}, msg)
+	msg := buildMessage(s.username, to, subject, html)
+	return smtp.SendMail(net.JoinHostPort(s.host, s.port), auth, s.username, []string{to}, msg)
 }
 
-// buildMessage CRLF-terminates lines, as SMTP requires.
+// SMTP requires CRLF line endings
 func buildMessage(from, to, subject, html string) []byte {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "From: %s\r\n", from)

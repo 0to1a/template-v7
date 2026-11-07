@@ -32,12 +32,12 @@ func TestJWT_IssueAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	principal, err := m.Parse(token)
+	subject, err := m.Parse(token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if principal.PublicUUID != testUUID {
-		t.Fatalf("subject = %s, want %s", principal.PublicUUID, testUUID)
+	if subject != testUUID {
+		t.Fatalf("subject = %s, want %s", subject, testUUID)
 	}
 }
 

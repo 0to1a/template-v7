@@ -84,22 +84,15 @@ func newTestService(t *testing.T, now time.Time) (*Service, *recordingDelivery) 
 
 func newTestServiceWithGuestRegistration(t *testing.T, now time.Time, isGuestRegistration bool) (*Service, *recordingDelivery) {
 	t.Helper()
-	jwtManager, err := NewJWTManager(jwtTestSecret)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jwtManager.now = func() time.Time { return now }
-
+	jwtManager := newTestJWTManager(t, now)
 	repo := &fakeRepo{users: map[string]User{
 		"admin@localhost":  {PublicUUID: adminUUID, Email: "admin@localhost"},
 		"user@example.com": {PublicUUID: testUUID, Email: "user@example.com"},
 	}, refreshTokens: map[string]*fakeRefreshToken{}}
 	delivery := &recordingDelivery{}
 
-	service := NewService(repo, delivery, jwtManager, isGuestRegistration)
-	service.now = func() time.Time { return now }
-	repo.now = func() time.Time { return service.now() }
-	return service, delivery
+	repo.now = func() time.Time { return jwtManager.now() }
+	return NewService(repo, delivery, jwtManager, isGuestRegistration), delivery
 }
 
 func isCode(err error, want gen.Code) bool {
@@ -134,12 +127,12 @@ func TestSubmitLogin_TC001_3(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	principal, err := service.jwtManager.Parse(resp.AccessToken)
+	subject, err := service.jwtManager.Parse(resp.AccessToken)
 	if err != nil {
 		t.Fatalf("issued token failed validation: %v", err)
 	}
-	if principal.PublicUUID != adminUUID {
-		t.Fatalf("subject = %s, want %s", principal.PublicUUID, adminUUID)
+	if subject != adminUUID {
+		t.Fatalf("subject = %s, want %s", subject, adminUUID)
 	}
 }
 
@@ -284,8 +277,8 @@ func TestGoogleLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("existing user: %v", err)
 	}
-	if principal, _ := service.jwtManager.Parse(resp.AccessToken); principal.PublicUUID != testUUID {
-		t.Fatalf("subject = %s, want %s", principal.PublicUUID, testUUID)
+	if subject, _ := service.jwtManager.Parse(resp.AccessToken); subject != testUUID {
+		t.Fatalf("subject = %s, want %s", subject, testUUID)
 	}
 
 	service.WithGoogle(cfg, fakeVerifier{})
@@ -329,8 +322,8 @@ func TestRefresh_RotatesToken(t *testing.T) {
 	if refreshed.RefreshToken == login.RefreshToken {
 		t.Fatal("refresh token was not rotated")
 	}
-	if principal, _ := service.jwtManager.Parse(refreshed.AccessToken); principal.PublicUUID != adminUUID {
-		t.Fatalf("subject = %s, want %s", principal.PublicUUID, adminUUID)
+	if subject, _ := service.jwtManager.Parse(refreshed.AccessToken); subject != adminUUID {
+		t.Fatalf("subject = %s, want %s", subject, adminUUID)
 	}
 	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: refreshed.RefreshToken}); err != nil {
 		t.Fatalf("rotated token rejected: %v", err)
@@ -365,7 +358,7 @@ func TestRefresh_RejectsExpiredAndUnknown(t *testing.T) {
 	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: "unknown"}); !isCode(err, gen.Unauthenticated) {
 		t.Fatalf("unknown token: err = %v, want Unauthenticated", err)
 	}
-	service.now = func() time.Time { return fixedTime.Add(refreshTokenTTL) }
+	service.jwtManager.now = func() time.Time { return fixedTime.Add(refreshTokenTTL) }
 	if _, err := service.Refresh(ctx, &gen.RefreshRequest{RefreshToken: login.RefreshToken}); !isCode(err, gen.Unauthenticated) {
 		t.Fatalf("expired token: err = %v, want Unauthenticated", err)
 	}

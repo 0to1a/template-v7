@@ -10,8 +10,9 @@ import {
 
 import type { FirebaseConfig } from './gen/api';
 
-// Firebase session is thrown away after the exchange; our JWT lives only in auth.ts
-export async function getGoogleIdToken(config: FirebaseConfig): Promise<string> {
+// null = the user closed the popup. The Firebase session is thrown away after
+// the exchange; our tokens live only in auth.ts
+export async function getGoogleIdToken(config: FirebaseConfig): Promise<string | null> {
 	const app =
 		getApps()[0] ??
 		initializeApp({
@@ -22,16 +23,15 @@ export async function getGoogleIdToken(config: FirebaseConfig): Promise<string> 
 		});
 	const auth = getAuth(app);
 	await setPersistence(auth, inMemoryPersistence);
-	const { user } = await signInWithPopup(auth, new GoogleAuthProvider());
 	try {
+		const { user } = await signInWithPopup(auth, new GoogleAuthProvider());
 		return await user.getIdToken();
+	} catch (err) {
+		const code = (err as { code?: string } | null)?.code;
+		if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request')
+			return null;
+		throw err;
 	} finally {
 		await signOut(auth);
 	}
-}
-
-// User closing the popup is not an error worth showing
-export function isPopupDismissed(err: unknown): boolean {
-	const code = (err as { code?: string } | null)?.code;
-	return code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request';
 }

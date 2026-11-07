@@ -17,7 +17,6 @@ type OTPData struct {
 	Code string
 }
 
-// RenderOTP renders the login-code email body.
 func RenderOTP(data OTPData) (string, error) {
 	var buf bytes.Buffer
 	if err := otpTemplate.Execute(&buf, data); err != nil {

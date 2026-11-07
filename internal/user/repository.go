@@ -5,9 +5,9 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"project/internal/gen/db"
-	"project/internal/platform/database"
 )
 
 // ErrUserNotFound means the lookup found no active user.
@@ -34,8 +34,8 @@ func NewRepository(queries *db.Queries) Repository {
 }
 
 func (r *repository) GetProfileByPublicUUID(ctx context.Context, publicUUID string) (Profile, error) {
-	id, err := database.ParsePublicUUID(publicUUID)
-	if err != nil {
+	var id pgtype.UUID
+	if err := id.Scan(publicUUID); err != nil {
 		return Profile{}, ErrUserNotFound
 	}
 
@@ -50,8 +50,8 @@ func (r *repository) GetProfileByPublicUUID(ctx context.Context, publicUUID stri
 }
 
 func (r *repository) UpdateDisplayName(ctx context.Context, publicUUID, displayName string) (Profile, error) {
-	id, err := database.ParsePublicUUID(publicUUID)
-	if err != nil {
+	var id pgtype.UUID
+	if err := id.Scan(publicUUID); err != nil {
 		return Profile{}, ErrUserNotFound
 	}
 

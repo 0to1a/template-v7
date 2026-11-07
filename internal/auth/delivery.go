@@ -12,14 +12,6 @@ type LoginCodeSender interface {
 	SendLoginCode(ctx context.Context, email, code string) error
 }
 
-// Lets the server run before real delivery is wired up
-type NoopLoginCodeSender struct{}
-
-func (NoopLoginCodeSender) SendLoginCode(context.Context, string, string) error {
-	return nil
-}
-
-// Decouples this package from SMTP specifics
 type EmailSender interface {
 	Send(ctx context.Context, to, subject, html string) error
 }
@@ -32,7 +24,7 @@ func NewEmailLoginCodeSender(sender EmailSender) *EmailLoginCodeSender {
 	return &EmailLoginCodeSender{sender: sender}
 }
 
-// Logs failures only; caller discards to avoid oracle
+// Logs failures: the caller discards them so the response can't reveal account existence
 func (e *EmailLoginCodeSender) SendLoginCode(ctx context.Context, email, code string) error {
 	body, err := template.RenderOTP(template.OTPData{Code: code})
 	if err != nil {

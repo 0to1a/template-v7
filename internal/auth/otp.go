@@ -26,10 +26,6 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-func isLocalAdmin(normalizedEmail string) bool {
-	return normalizedEmail == localAdminEmail
-}
-
 // No stored secret: rotating JWT_SECRET invalidates OTPs
 func deriveTOTPSecret(jwtSecret []byte, publicUUID string) []byte {
 	mac := hmac.New(sha256.New, jwtSecret)
@@ -60,21 +56,14 @@ func hotp(secret []byte, counter uint64) string {
 }
 
 // Skew=0: a code is replayable within its 5-min step
-func currentTOTP(secret []byte, now time.Time) string {
-	counter := uint64(now.Unix()) / uint64(totpPeriod.Seconds())
-	return hotp(secret, counter)
-}
-
-// Takes time as a param so tests stay deterministic
 func generateCode(jwtSecret []byte, publicUUID, normalizedEmail string, now time.Time) string {
-	if isLocalAdmin(normalizedEmail) {
+	if normalizedEmail == localAdminEmail {
 		return localAdminCode
 	}
-	secret := deriveTOTPSecret(jwtSecret, publicUUID)
-	return currentTOTP(secret, now)
+	counter := uint64(now.Unix()) / uint64(totpPeriod.Seconds())
+	return hotp(deriveTOTPSecret(jwtSecret, publicUUID), counter)
 }
 
-// Constant-time compare avoids a timing oracle
 func verifyCode(jwtSecret []byte, publicUUID, normalizedEmail, code string, now time.Time) bool {
 	expected := generateCode(jwtSecret, publicUUID, normalizedEmail, now)
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1

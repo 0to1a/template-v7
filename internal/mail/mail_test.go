@@ -9,39 +9,27 @@ import (
 	"time"
 )
 
-func TestParseURL_Valid(t *testing.T) {
-	cfg, err := ParseURL("smtp://alice:secret@smtp.example.com:587")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := Config{Host: "smtp.example.com", Port: "587", Username: "alice", Password: "secret"}
-	if cfg != want {
-		t.Fatalf("ParseURL = %+v, want %+v", cfg, want)
-	}
-}
-
-// TC-004-3: a MAIL_URL missing its scheme is malformed.
-func TestParseURL_MissingScheme_TC004_3(t *testing.T) {
-	if _, err := ParseURL("alice:secret@smtp.example.com:587"); err == nil {
-		t.Fatal("expected an error for a MAIL_URL with no scheme")
+// TC-004-3: a MAIL_URL missing its scheme, host or port is malformed.
+func TestNew_Malformed_TC004_3(t *testing.T) {
+	for _, raw := range []string{
+		"alice:secret@smtp.example.com:587",
+		"smtp://alice:secret@:587",
+		"smtp://alice:secret@smtp.example.com",
+	} {
+		if _, err := New(raw); err == nil {
+			t.Errorf("%q: expected an error", raw)
+		}
 	}
 }
 
-// TC-004-3: a MAIL_URL missing its host is malformed.
-func TestParseURL_MissingHost_TC004_3(t *testing.T) {
-	if _, err := ParseURL("smtp://alice:secret@:587"); err == nil {
-		t.Fatal("expected an error for a MAIL_URL with no host")
-	}
-}
-
-// TC-004-2: unset MAIL_URL yields no sender, no error
-func TestNewSMTPSenderFromURL_Empty_TC004_2(t *testing.T) {
-	sender, err := NewSMTPSenderFromURL("")
+// TC-004-2: unset MAIL_URL discards mail without error
+func TestNew_Empty_TC004_2(t *testing.T) {
+	sender, err := New("")
 	if err != nil {
 		t.Fatalf("empty MAIL_URL must not error, got: %v", err)
 	}
-	if sender != nil {
-		t.Fatal("empty MAIL_URL must yield a nil sender")
+	if err := sender.Send(context.Background(), "user@example.com", "s", "<p>x</p>"); err != nil {
+		t.Fatalf("discarding sender returned %v", err)
 	}
 }
 
@@ -125,12 +113,10 @@ func (s *fakeSMTPServer) serveOne(t *testing.T, ln net.Listener) {
 // TC-004-1: valid MAIL_URL sends HTML email via SMTP
 func TestSMTPSender_Send_TC004_1(t *testing.T) {
 	server := startFakeSMTPServer(t)
-	host, port, err := net.SplitHostPort(server.addr)
+	sender, err := New("smtp://alice:secret@" + server.addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	sender := NewSMTPSender(Config{Host: host, Port: port, Username: "alice", Password: "secret"})
 	if err := sender.Send(context.Background(), "user@example.com", "Your login code", "<p>123456</p>"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}

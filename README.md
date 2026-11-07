@@ -11,7 +11,7 @@ the Go server plumbing (`internal/gen/api`) and the TypeScript client
 
 Requirements: Go 1.27 (version pinned in [`go.mod`](go.mod)), Bun (version
 pinned as `packageManager` in [`web/package.json`](web/package.json)), apic
-(`go install github.com/0to1a/apic/cmd/apic@latest`), and an external
+(`go install github.com/0to1a/apic/cmd/apic@v0.2.0`), and an external
 PostgreSQL. CI pins the same versions; see `.github/workflows/ci.yml`.
 
 ```bash

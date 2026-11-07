@@ -5,11 +5,11 @@ import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 
+import { ACCESS_TOKEN_KEY } from '../src/lib/auth';
+
 // Mirrors vite proxy; matches fixture APIs, not backend
 const API_PATH_PATTERN = /^\/(?:api\/|health$)/;
 
-// Must match ACCESS_TOKEN_KEY in web/src/lib/auth.ts
-const ACCESS_TOKEN_KEY = 'template-v7.access_token';
 const DUMMY_ACCESS_TOKEN = 'make-docs-dummy-token';
 
 const WEB_DIR = join(import.meta.dir, '..');
@@ -17,7 +17,8 @@ const REPO_ROOT = join(WEB_DIR, '..');
 const ROUTES_DIR = join(WEB_DIR, 'src/routes');
 const DIST_DIR = join(WEB_DIR, 'dist');
 const FIXTURES_DIR = join(import.meta.dir, 'fixtures');
-const AUTH_FIXTURE_PATH = join(FIXTURES_DIR, '_auth.json');
+// Mocks every route gets unless a state overrides them
+const SHARED_FIXTURE_PATH = join(FIXTURES_DIR, '_api.json');
 const TEMPLATES_DIR = join(REPO_ROOT, 'internal/template');
 const DOCS_DIR = join(REPO_ROOT, 'docs');
 const SCREENSHOTS_DIR = join(DOCS_DIR, 'screenshots');
@@ -30,43 +31,32 @@ const VIEWPORT = { width: 1280, height: 800 };
 // of the frame as side padding and leaves the fixed-size thumbnail box mostly empty
 const TEMPLATE_VIEWPORT = { width: 600, height: 800 };
 
-interface GenerateSpec {
-	count: number;
-	seed: number;
-	template?: unknown;
-}
-
-interface ErrorSpec {
-	code: string;
-	message?: string;
-}
-
 interface StateFixture {
 	api?: Record<string, unknown>;
 	// Some routes only reachable via in-app navigation
 	visit?: string;
 	fill?: Record<string, string>;
 	submit?: string;
-	// Extra seed beyond the auth-required token seeding
-	localStorage?: Record<string, string>;
+	// Seeds an access token on a public route; auth-required routes always get one
+	signedIn?: boolean;
 }
 
 interface RouteFixture {
 	title: string;
 	description: string;
-	auth: 'public' | 'required';
 	// Concrete values for $segment placeholders in the route path (e.g. { postId: "123" })
 	params?: Record<string, string>;
 	states: Record<string, StateFixture>;
 }
 
-interface AuthFixture {
-	api?: Record<string, unknown>;
+interface SharedFixture {
+	api: Record<string, unknown>;
 }
 
 interface DiscoveredRoute {
 	urlPath: string;
 	sourceFile: string; // repo-root-relative, forward-slashed
+	auth: 'public' | 'required';
 }
 
 function toPosix(path: string): string {
@@ -83,15 +73,21 @@ function screenshotDirFor(urlPath: string): string {
 	return join(SCREENSHOTS_DIR, relativePath);
 }
 
-// _dir/_file = layout, no segment; $param kept literal, resolved later via fixture.params
-function discoverRoutes(dir: string, urlSegments: string[]): DiscoveredRoute[] {
+// _dir/_file = layout, no segment; $param kept literal, resolved later via fixture.params.
+// Routes under the _authenticated layout are the ones its guard protects.
+function discoverRoutes(
+	dir: string,
+	urlSegments: string[],
+	auth: DiscoveredRoute['auth']
+): DiscoveredRoute[] {
 	const entries = readdirSync(dir, { withFileTypes: true });
 	const routes: DiscoveredRoute[] = [];
 
 	for (const entry of entries) {
 		if (entry.isDirectory()) {
 			const nextSegments = entry.name.startsWith('_') ? urlSegments : [...urlSegments, entry.name];
-			routes.push(...discoverRoutes(join(dir, entry.name), nextSegments));
+			const nextAuth = entry.name === '_authenticated' ? 'required' : auth;
+			routes.push(...discoverRoutes(join(dir, entry.name), nextSegments, nextAuth));
 			continue;
 		}
 
@@ -102,7 +98,7 @@ function discoverRoutes(dir: string, urlSegments: string[]): DiscoveredRoute[] {
 
 		const segments = base === 'index' ? urlSegments : [...urlSegments, base];
 		const urlPath = segments.length === 0 ? '/' : `/${segments.join('/')}`;
-		routes.push({ urlPath, sourceFile: toPosix(relative(REPO_ROOT, join(dir, entry.name))) });
+		routes.push({ urlPath, sourceFile: toPosix(relative(REPO_ROOT, join(dir, entry.name))), auth });
 	}
 
 	return routes;
@@ -139,18 +135,16 @@ function serveDist(root: string, port: number): Promise<Server> {
 		void (async () => {
 			const url = new URL(req.url ?? '/', 'http://localhost');
 			const requested = join(root, decodeURIComponent(url.pathname));
-			const candidates = requested.endsWith(sep) ? [join(requested, 'index.html')] : [requested];
-			for (const candidate of candidates) {
-				try {
-					const body = await readFile(candidate);
-					res.writeHead(200, {
-						'Content-Type': MIME_TYPES[extname(candidate)] ?? 'application/octet-stream'
-					});
-					res.end(body);
-					return;
-				} catch {
-					// fall through, then SPA fallback
-				}
+			const file = requested.endsWith(sep) ? join(requested, 'index.html') : requested;
+			try {
+				const body = await readFile(file);
+				res.writeHead(200, {
+					'Content-Type': MIME_TYPES[extname(file)] ?? 'application/octet-stream'
+				});
+				res.end(body);
+				return;
+			} catch {
+				// SPA fallback below
 			}
 			const body = await readFile(join(root, 'index.html'));
 			res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -158,72 +152,6 @@ function serveDist(root: string, port: number): Promise<Server> {
 		})();
 	});
 	return new Promise((resolve) => server.listen(port, () => resolve(server)));
-}
-
-// $generate: seeded PRNG builds deterministic mock arrays
-function seededRandom(seed: number): () => number {
-	let state = seed >>> 0 || 0x9e3779b9;
-	return () => {
-		state ^= state << 13;
-		state >>>= 0;
-		state ^= state >>> 17;
-		state ^= state << 5;
-		state >>>= 0;
-		return state / 0xffffffff;
-	};
-}
-
-function instantiateTemplate(template: unknown, index: number, rand: () => number): unknown {
-	if (typeof template === 'string') {
-		return template
-			.replace(/\{\{index\}\}/g, String(index + 1))
-			.replace(/\{\{seed\}\}/g, () => String(Math.floor(rand() * 1_000_000)));
-	}
-	if (Array.isArray(template)) {
-		return template.map((item) => instantiateTemplate(item, index, rand));
-	}
-	if (template !== null && typeof template === 'object') {
-		const out: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(template as Record<string, unknown>)) {
-			out[key] = instantiateTemplate(value, index, rand);
-		}
-		return out;
-	}
-	return template;
-}
-
-function isGenerateNode(value: unknown): value is { $generate: GenerateSpec } {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		!Array.isArray(value) &&
-		typeof (value as Record<string, unknown>).$generate === 'object'
-	);
-}
-
-function resolveGenerators(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(resolveGenerators);
-	if (value !== null && typeof value === 'object') {
-		if (isGenerateNode(value)) {
-			const spec = value.$generate;
-			const rand = seededRandom(spec.seed);
-			const items: unknown[] = [];
-			for (let i = 0; i < spec.count; i += 1) {
-				items.push(
-					spec.template !== undefined
-						? instantiateTemplate(spec.template, i, rand)
-						: { id: i + 1, seed: Math.floor(rand() * 1_000_000) }
-				);
-			}
-			return items;
-		}
-		const out: Record<string, unknown> = {};
-		for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-			out[key] = resolveGenerators(val);
-		}
-		return out;
-	}
-	return value;
 }
 
 // Mirrors apic's Code table (numbering per Google's canonical status codes)
@@ -246,30 +174,22 @@ const ERROR_CODES: Record<string, { code: number; status: string; http: number }
 	unauthenticated: { code: 16, status: 'UNAUTHENTICATED', http: 401 }
 };
 
-function extractErrorSpec(mock: unknown): ErrorSpec | undefined {
+// "$error": "<code>" in a fixture mocks a failed call
+function extractErrorCode(mock: unknown): string | undefined {
 	if (mock === null || typeof mock !== 'object' || Array.isArray(mock)) return undefined;
 	const value = (mock as Record<string, unknown>).$error;
-	if (value === undefined) return undefined;
-	if (typeof value === 'string') return { code: value };
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		typeof (value as ErrorSpec).code === 'string'
-	) {
-		return value as ErrorSpec;
-	}
-	return { code: 'unknown' };
+	return typeof value === 'string' ? value : undefined;
 }
 
 // Auto-derived from fixture; never hardcoded per route
-function summarizeApiMock(apiKey: string, resolvedMock: unknown): string {
-	if (resolvedMock === null) return `${apiKey} returns 204 No Content`;
+function summarizeApiMock(apiKey: string, mock: unknown): string {
+	if (mock === null) return `${apiKey} returns 204 No Content`;
 
-	const errorSpec = extractErrorSpec(resolvedMock);
-	if (errorSpec) return `${apiKey} fails with a "${errorSpec.code}" error`;
+	const errorCode = extractErrorCode(mock);
+	if (errorCode) return `${apiKey} fails with a "${errorCode}" error`;
 
-	if (resolvedMock !== null && typeof resolvedMock === 'object' && !Array.isArray(resolvedMock)) {
-		const entries = Object.entries(resolvedMock as Record<string, unknown>);
+	if (typeof mock === 'object' && !Array.isArray(mock)) {
+		const entries = Object.entries(mock as Record<string, unknown>);
 		const arrayEntry = entries.find(([, v]) => Array.isArray(v));
 		if (arrayEntry) {
 			const [field, arr] = arrayEntry as [string, unknown[]];
@@ -281,7 +201,11 @@ function summarizeApiMock(apiKey: string, resolvedMock: unknown): string {
 	return `${apiKey} returns a mock response`;
 }
 
-function mockSummaryFor(state: StateFixture, mergedApi: Record<string, unknown>): string {
+function mockSummaryFor(
+	state: StateFixture,
+	mergedApi: Record<string, unknown>,
+	requestedApis: string[]
+): string {
 	const parts: string[] = [];
 
 	const flowSteps: string[] = [];
@@ -290,13 +214,10 @@ function mockSummaryFor(state: StateFixture, mergedApi: Record<string, unknown>)
 	if (state.submit) flowSteps.push('submits the form');
 	if (flowSteps.length > 0) parts.push(flowSteps.join(', then '));
 
-	if (state.localStorage) {
-		parts.push(`seeds localStorage key(s) ${Object.keys(state.localStorage).sort().join(', ')}`);
-	}
+	if (state.signedIn) parts.push('signed in');
 
-	const apiKeys = Object.keys(state.api ?? {}).sort();
-	for (const key of apiKeys) {
-		parts.push(summarizeApiMock(key, resolveGenerators(mergedApi[key])));
+	for (const key of requestedApis) {
+		parts.push(summarizeApiMock(key, mergedApi[key]));
 	}
 
 	if (parts.length === 0) return 'No API calls; static view with no mock data.';
@@ -331,12 +252,10 @@ async function renderState(
 	fixture: RouteFixture,
 	stateName: string,
 	state: StateFixture,
-	authFixture: AuthFixture
-): Promise<StateEntry> {
-	const mergedApi: Record<string, unknown> = {
-		...(fixture.auth === 'required' ? (authFixture.api ?? {}) : {}),
-		...(state.api ?? {})
-	};
+	shared: SharedFixture
+): Promise<{ entry: StateEntry; requestedApis: string[] }> {
+	const mergedApi: Record<string, unknown> = { ...shared.api, ...state.api };
+	const requested = new Set<string>();
 	const resolvedUrlPath = resolveDynamicPath(route.urlPath, fixture.params);
 
 	const context = await browser.newContext({
@@ -351,6 +270,7 @@ async function renderState(
 		async (routeHandle) => {
 			const request = routeHandle.request();
 			const apiKey = `${request.method()} ${new URL(request.url()).pathname}`;
+			requested.add(apiKey);
 			const mock = mergedApi[apiKey];
 			if (mock === undefined) {
 				console.warn(
@@ -369,16 +289,16 @@ async function renderState(
 				return;
 			}
 
-			const errorSpec = extractErrorSpec(mock);
-			if (errorSpec) {
-				const spec = ERROR_CODES[errorSpec.code] ?? ERROR_CODES.unknown;
+			const errorCode = extractErrorCode(mock);
+			if (errorCode) {
+				const spec = ERROR_CODES[errorCode] ?? ERROR_CODES.unknown;
 				await routeHandle.fulfill({
 					status: spec.http,
 					contentType: 'application/json',
 					body: JSON.stringify({
 						code: spec.code,
 						status: spec.status,
-						message: errorSpec.message ?? `mock ${errorSpec.code} error`
+						message: `mock ${errorCode} error`
 					})
 				});
 				return;
@@ -393,25 +313,18 @@ async function renderState(
 			await routeHandle.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify({ code: 0, status: 'OK', data: resolveGenerators(mock) })
+				body: JSON.stringify({ code: 0, status: 'OK', data: mock })
 			});
 		}
 	);
 
-	if (fixture.auth === 'required') {
+	if (route.auth === 'required' || state.signedIn) {
 		await context.addInitScript(
 			(seed: { key: string; token: string }) => {
 				window.localStorage.setItem(seed.key, seed.token);
 			},
 			{ key: ACCESS_TOKEN_KEY, token: DUMMY_ACCESS_TOKEN }
 		);
-	}
-	if (state.localStorage) {
-		await context.addInitScript((seed: Record<string, string>) => {
-			for (const [key, value] of Object.entries(seed)) {
-				window.localStorage.setItem(key, value);
-			}
-		}, state.localStorage);
 	}
 
 	await page.goto(`http://localhost:${PORT}${state.visit ?? resolvedUrlPath}`, {
@@ -437,10 +350,14 @@ async function renderState(
 
 	await context.close();
 
+	const requestedApis = [...requested].sort();
 	return {
-		name: stateName,
-		screenshot: toPosix(relative(REPO_ROOT, screenshotAbsPath)),
-		mockSummary: mockSummaryFor(state, mergedApi)
+		entry: {
+			name: stateName,
+			screenshot: toPosix(relative(REPO_ROOT, screenshotAbsPath)),
+			mockSummary: mockSummaryFor(state, mergedApi, requestedApis)
+		},
+		requestedApis
 	};
 }
 
@@ -494,7 +411,6 @@ interface DiscoveredTemplate {
 
 // internal/template/*.html; each file is one named template
 function discoverTemplates(): DiscoveredTemplate[] {
-	if (!existsSync(TEMPLATES_DIR)) return [];
 	return readdirSync(TEMPLATES_DIR, { withFileTypes: true })
 		.filter((entry) => entry.isFile() && entry.name.endsWith('.html'))
 		.map((entry) => {
@@ -556,7 +472,6 @@ function toDocsRelative(repoRootRelativePath: string): string {
 	return toPosix(relative(DOCS_DIR, join(REPO_ROOT, repoRootRelativePath)));
 }
 
-// Styled after v5's catalog; only visual language reused
 function renderCatalogHtml(routes: RouteEntry[], templates: TemplateEntry[]): string {
 	const catalogRoutes = routes.map((route) => ({
 		...route,
@@ -825,7 +740,9 @@ function writeCatalogHtml(routes: RouteEntry[], templates: TemplateEntry[]): voi
 async function main(): Promise<void> {
 	const discoveredTemplates = discoverTemplates();
 
-	const routes = discoverRoutes(ROUTES_DIR, []).sort((a, b) => a.urlPath.localeCompare(b.urlPath));
+	const routes = discoverRoutes(ROUTES_DIR, [], 'public').sort((a, b) =>
+		a.urlPath.localeCompare(b.urlPath)
+	);
 
 	const missing = routes.filter((route) => !existsSync(fixtureFileFor(route.urlPath)));
 	if (missing.length > 0) {
@@ -845,9 +762,7 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
-	const authFixture: AuthFixture = existsSync(AUTH_FIXTURE_PATH)
-		? readJson<AuthFixture>(AUTH_FIXTURE_PATH)
-		: { api: {} };
+	const shared = readJson<SharedFixture>(SHARED_FIXTURE_PATH);
 
 	// Regenerated wholesale; avoids stale orphaned PNGs
 	rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
@@ -875,15 +790,23 @@ async function main(): Promise<void> {
 				const states: StateEntry[] = [];
 				for (const stateName of stateNames) {
 					const state = fixture.states[stateName];
-					for (const key of Object.keys(state.api ?? {})) apiKeys.add(key);
-					states.push(await renderState(browser, route, fixture, stateName, state, authFixture));
+					const { entry, requestedApis } = await renderState(
+						browser,
+						route,
+						fixture,
+						stateName,
+						state,
+						shared
+					);
+					for (const key of requestedApis) apiKeys.add(key);
+					states.push(entry);
 				}
 
 				routeEntries.push({
 					path: route.urlPath,
 					title: fixture.title,
 					description: fixture.description,
-					auth: fixture.auth,
+					auth: route.auth,
 					sourceFile: route.sourceFile,
 					fixture: toPosix(relative(REPO_ROOT, fixtureFileFor(route.urlPath))),
 					apis: [...apiKeys].sort(),
