@@ -31,7 +31,7 @@ jobs:
 
       - name: Install apic v0.2.0
         run: |
-          curl -fsSLO https://github.com/0to1a/apic/releases/download/v0.2.0/apic-linux-amd64
+          curl --proto '=https' --tlsv1.2 -fsSLO https://github.com/0to1a/apic/releases/download/v0.2.0/apic-linux-amd64
           echo "4bb7919fbd97e091e7dd1b8e1f47162a9f13160f69948557afc52a1d75498aaa  apic-linux-amd64" | sha256sum -c -
           sudo install apic-linux-amd64 /usr/local/bin/apic
 

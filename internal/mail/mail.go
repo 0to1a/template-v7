@@ -3,6 +3,7 @@ package mail
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/smtp"
@@ -39,17 +40,51 @@ func New(rawURL string) (*Sender, error) {
 	return s, nil
 }
 
-// net/smtp only sends PLAIN auth over localhost or TLS
+// Like smtp.SendMail, but STARTTLS is mandatory for non-loopback hosts so a
+// stripped STARTTLS advertisement can't downgrade the session to plaintext.
 func (s *Sender) Send(_ context.Context, to, subject, html string) error {
 	if s.host == "" {
 		return nil
 	}
-	var auth smtp.Auth
-	if s.username != "" {
-		auth = smtp.PlainAuth("", s.username, s.password, s.host)
+	c, err := smtp.Dial(net.JoinHostPort(s.host, s.port))
+	if err != nil {
+		return err
 	}
-	msg := buildMessage(s.username, to, subject, html)
-	return smtp.SendMail(net.JoinHostPort(s.host, s.port), auth, s.username, []string{to}, msg)
+	defer c.Close()
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err := c.StartTLS(&tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	} else if !isLoopback(s.host) {
+		return fmt.Errorf("mail: %s does not offer STARTTLS", s.host)
+	}
+	if s.username != "" {
+		if err := c.Auth(smtp.PlainAuth("", s.username, s.password, s.host)); err != nil {
+			return err
+		}
+	}
+	if err := c.Mail(s.username); err != nil {
+		return err
+	}
+	if err := c.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(buildMessage(s.username, to, subject, html)); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
+}
+
+// Local dev relays (e.g. mailpit on localhost:1025) don't speak TLS
+func isLoopback(host string) bool {
+	return host == "localhost" || net.ParseIP(host).IsLoopback()
 }
 
 // SMTP requires CRLF line endings

@@ -136,3 +136,15 @@ func TestSMTPSender_Send_TC004_1(t *testing.T) {
 		t.Fatal("fake smtp server never received a message")
 	}
 }
+
+// Plaintext SMTP is only allowed to loopback relays
+func TestIsLoopback(t *testing.T) {
+	for host, want := range map[string]bool{
+		"localhost": true, "127.0.0.1": true, "::1": true,
+		"smtp.example.com": false, "10.0.0.5": false, "": false,
+	} {
+		if got := isLoopback(host); got != want {
+			t.Errorf("isLoopback(%q) = %v, want %v", host, got, want)
+		}
+	}
+}

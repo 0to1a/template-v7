@@ -15,3 +15,4 @@ web/src/lib/gen
 web/src/routeTree.gen.ts
 web/test-results
 docs/screenshots
+.trail
