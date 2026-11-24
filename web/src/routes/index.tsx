@@ -4,7 +4,8 @@ import { ArrowRight, Check, Layers3, ShieldCheck, Sparkles, Zap } from 'lucide-r
 
 import { isAuthenticated } from '@/lib/auth';
 import { logout } from '@/lib/client';
-import { Button } from '@/lib/components/ui/button';
+import { Button, buttonVariants } from '@/lib/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/')({
 	component: HomeComponent
@@ -89,14 +90,12 @@ function HomeComponent() {
 										{authed ? 'Open your profile' : 'Start building'}
 										<ArrowRight data-icon="inline-end" />
 									</Button>
-									<Button
-										size="lg"
-										variant="outline"
-										className="h-11 px-5"
-										render={<a href="#features" />}
+									<a
+										href="#features"
+										className={cn(buttonVariants({ size: 'lg', variant: 'outline' }), 'h-11 px-5')}
 									>
 										Explore features
-									</Button>
+									</a>
 								</div>
 							</div>
 

@@ -9,7 +9,7 @@ type AuthShellProps = {
 	children: ReactNode;
 };
 
-export function AuthShell({ eyebrow, title, description, children }: AuthShellProps) {
+export function AuthShell({ eyebrow, title, description, children }: Readonly<AuthShellProps>) {
 	return (
 		<main className="grid min-h-screen bg-background lg:grid-cols-[minmax(0,1fr)_minmax(28rem,0.86fr)]">
 			<section className="flex min-h-screen flex-col px-5 py-6 sm:px-10 lg:px-14 lg:py-10">

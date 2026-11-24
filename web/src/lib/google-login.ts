@@ -26,11 +26,11 @@ export async function getGoogleIdToken(config: FirebaseConfig): Promise<string |
 	try {
 		const { user } = await signInWithPopup(auth, new GoogleAuthProvider());
 		return await user.getIdToken();
-	} catch (err) {
-		const code = (err as { code?: string } | null)?.code;
+	} catch (error) {
+		const code = (error as { code?: string } | null)?.code;
 		if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request')
 			return null;
-		throw err;
+		throw error;
 	} finally {
 		await signOut(auth);
 	}

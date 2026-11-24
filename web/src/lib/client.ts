@@ -29,9 +29,9 @@ function refreshTokens(staleAccessToken: string): Promise<boolean> {
 				setTokens(await client.refresh({ refresh_token }));
 				return true;
 			}
-		} catch (err) {
+		} catch (error) {
 			// Network errors keep the tokens for a retry
-			if (!(err instanceof ApiError && err.code === 'UNAUTHENTICATED')) return false;
+			if (!(error instanceof ApiError && error.code === 'UNAUTHENTICATED')) return false;
 		}
 		// Signed out: the next guarded navigation goes to /login
 		clearTokens();
@@ -53,9 +53,9 @@ function withRefresh<F extends (req: never) => Promise<unknown>>(fn: F): F {
 		const accessToken = getAccessToken();
 		try {
 			return await fn(req);
-		} catch (err) {
-			const expired = err instanceof ApiError && err.code === 'UNAUTHENTICATED';
-			if (!expired || accessToken === null || !(await refreshTokens(accessToken))) throw err;
+		} catch (error) {
+			const expired = error instanceof ApiError && error.code === 'UNAUTHENTICATED';
+			if (!expired || accessToken === null || !(await refreshTokens(accessToken))) throw error;
 			return fn(req);
 		}
 	}) as F;

@@ -8,7 +8,7 @@ import { dirname, extname, join, relative, sep } from 'node:path';
 import { ACCESS_TOKEN_KEY } from '../src/lib/auth';
 
 // Mirrors vite proxy; matches fixture APIs, not backend
-const API_PATH_PATTERN = /^\/(?:api\/|health$)/;
+const API_PATH_PATTERN = /^\/(?:api\/.*|health)$/;
 
 const DUMMY_ACCESS_TOKEN = 'make-docs-dummy-token';
 
@@ -88,25 +88,34 @@ function discoverRoutes(
 			const nextSegments = entry.name.startsWith('_') ? urlSegments : [...urlSegments, entry.name];
 			const nextAuth = entry.name === '_authenticated' ? 'required' : auth;
 			routes.push(...discoverRoutes(join(dir, entry.name), nextSegments, nextAuth));
-			continue;
+		} else if (entry.isFile()) {
+			const route = fileRoute(dir, entry.name, urlSegments, auth);
+			if (route) routes.push(route);
 		}
-
-		if (!entry.isFile() || !entry.name.endsWith('.tsx') || entry.name === '__root.tsx') continue;
-
-		const base = entry.name.slice(0, -'.tsx'.length);
-		if (base.startsWith('_')) continue; // pathless layout
-
-		const segments = base === 'index' ? urlSegments : [...urlSegments, base];
-		const urlPath = segments.length === 0 ? '/' : `/${segments.join('/')}`;
-		routes.push({ urlPath, sourceFile: toPosix(relative(REPO_ROOT, join(dir, entry.name))), auth });
 	}
 
 	return routes;
 }
 
+function fileRoute(
+	dir: string,
+	name: string,
+	urlSegments: string[],
+	auth: DiscoveredRoute['auth']
+): DiscoveredRoute | null {
+	if (!name.endsWith('.tsx') || name === '__root.tsx') return null;
+
+	const base = name.slice(0, -'.tsx'.length);
+	if (base.startsWith('_')) return null; // pathless layout
+
+	const segments = base === 'index' ? urlSegments : [...urlSegments, base];
+	const urlPath = segments.length === 0 ? '/' : `/${segments.join('/')}`;
+	return { urlPath, sourceFile: toPosix(relative(REPO_ROOT, join(dir, name))), auth };
+}
+
 // Substitutes $segment placeholders (e.g. "$postId") with values from fixture.params
 function resolveDynamicPath(urlPath: string, params: Record<string, string> | undefined): string {
-	return urlPath.replace(/\$([A-Za-z0-9_]+)/g, (match, name: string) => {
+	return urlPath.replace(/\$(\w+)/g, (match, name: string) => {
 		const value = params?.[name];
 		if (value === undefined) {
 			throw new Error(
@@ -258,12 +267,12 @@ async function renderState(
 	const requested = new Set<string>();
 	const resolvedUrlPath = resolveDynamicPath(route.urlPath, fixture.params);
 
-	const context = await browser.newContext({
+	const browserContext = await browser.newContext({
 		viewport: VIEWPORT,
 		reducedMotion: 'reduce',
 		colorScheme: 'light'
 	});
-	const page: Page = await context.newPage();
+	const page: Page = await browserContext.newPage();
 
 	await page.route(
 		(url) => API_PATH_PATTERN.test(url.pathname),
@@ -319,7 +328,7 @@ async function renderState(
 	);
 
 	if (route.auth === 'required' || state.signedIn) {
-		await context.addInitScript(
+		await browserContext.addInitScript(
 			(seed: { key: string; token: string }) => {
 				window.localStorage.setItem(seed.key, seed.token);
 			},
@@ -333,9 +342,11 @@ async function renderState(
 	await page.evaluate(() => document.fonts.ready);
 
 	if (state.fill) {
-		for (const [selector, value] of Object.entries(state.fill)) {
-			await page.fill(selector, value);
-		}
+		// Sequential on purpose: fills share one page's focus
+		await Object.entries(state.fill).reduce<Promise<void>>(
+			(previous, [selector, value]) => previous.then(() => page.fill(selector, value)),
+			Promise.resolve()
+		);
 	}
 	if (state.submit) {
 		await page.click(state.submit);
@@ -348,7 +359,7 @@ async function renderState(
 	mkdirSync(dirname(screenshotAbsPath), { recursive: true });
 	await page.screenshot({ path: screenshotAbsPath, fullPage: true });
 
-	await context.close();
+	await browserContext.close();
 
 	const requestedApis = [...requested].sort();
 	return {
@@ -430,8 +441,11 @@ async function renderTemplatePreview(
 	browser: Browser,
 	template: DiscoveredTemplate
 ): Promise<TemplateEntry> {
-	const context = await browser.newContext({ viewport: TEMPLATE_VIEWPORT, colorScheme: 'light' });
-	const page: Page = await context.newPage();
+	const browserContext = await browser.newContext({
+		viewport: TEMPLATE_VIEWPORT,
+		colorScheme: 'light'
+	});
+	const page: Page = await browserContext.newPage();
 	await page.setContent(fillTemplateSample(template.source), { waitUntil: 'networkidle' });
 	await page.evaluate(() => document.fonts.ready);
 
@@ -448,7 +462,7 @@ async function renderTemplatePreview(
 		clip: { x: 0, y: 0, width: contentBox.width, height: contentBox.height }
 	});
 
-	await context.close();
+	await browserContext.close();
 
 	return {
 		name: template.name,
@@ -480,12 +494,12 @@ function renderCatalogHtml(routes: RouteEntry[], templates: TemplateEntry[]): st
 			screenshot: toDocsRelative(state.screenshot)
 		}))
 	}));
-	const routesJson = JSON.stringify(catalogRoutes).replace(/</g, '\\u003c');
+	const routesJson = JSON.stringify(catalogRoutes).replaceAll('<', String.raw`\u003c`);
 	const catalogTemplates = templates.map((template) => ({
 		...template,
 		screenshot: toDocsRelative(template.screenshot)
 	}));
-	const templatesJson = JSON.stringify(catalogTemplates).replace(/</g, '\\u003c');
+	const templatesJson = JSON.stringify(catalogTemplates).replaceAll('<', String.raw`\u003c`);
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -591,10 +605,10 @@ const TEMPLATES = ${templatesJson};
 <div id="app">
   <aside>
     <h1>Route Catalog</h1>
-    <input id="search" type="search" placeholder="Search routes..." autocomplete="off">
-    <nav id="nav"></nav>
+    <input id="search" type="search" aria-label="Search routes" placeholder="Search routes..." autocomplete="off">
+    <nav id="nav" aria-label="Routes"></nav>
     <div class="group-label" id="templates-nav-label" style="display:none">Templates</div>
-    <nav id="templates-nav"></nav>
+    <nav id="templates-nav" aria-label="Templates"></nav>
   </aside>
   <main id="main"></main>
 </div>
@@ -737,12 +751,45 @@ function writeCatalogHtml(routes: RouteEntry[], templates: TemplateEntry[]): voi
 	writeFileSync(CATALOG_HTML_PATH, renderCatalogHtml(routes, templates));
 }
 
+async function renderRoute(
+	browser: Browser,
+	route: DiscoveredRoute,
+	shared: SharedFixture
+): Promise<RouteEntry> {
+	const fixturePath = toPosix(relative(REPO_ROOT, fixtureFileFor(route.urlPath)));
+	const fixture = readJson<RouteFixture>(fixtureFileFor(route.urlPath));
+	const stateNames = Object.keys(fixture.states ?? {});
+	stateNames.sort();
+	if (stateNames.length === 0) {
+		throw new Error(`make docs: fixture ${fixturePath} declares no states`);
+	}
+
+	// Each state renders in its own browser context, so they can run concurrently
+	const rendered = await Promise.all(
+		stateNames.map((stateName) =>
+			renderState(browser, route, fixture, stateName, fixture.states[stateName], shared)
+		)
+	);
+	const apis = [...new Set(rendered.flatMap(({ requestedApis }) => requestedApis))];
+	apis.sort();
+
+	return {
+		path: route.urlPath,
+		title: fixture.title,
+		description: fixture.description,
+		auth: route.auth,
+		sourceFile: route.sourceFile,
+		fixture: fixturePath,
+		apis,
+		states: rendered.map(({ entry }) => entry)
+	};
+}
+
 async function main(): Promise<void> {
 	const discoveredTemplates = discoverTemplates();
 
-	const routes = discoverRoutes(ROUTES_DIR, [], 'public').sort((a, b) =>
-		a.urlPath.localeCompare(b.urlPath)
-	);
+	const routes = discoverRoutes(ROUTES_DIR, [], 'public');
+	routes.sort((a, b) => a.urlPath.localeCompare(b.urlPath));
 
 	const missing = routes.filter((route) => !existsSync(fixtureFileFor(route.urlPath)));
 	if (missing.length > 0) {
@@ -773,46 +820,16 @@ async function main(): Promise<void> {
 	try {
 		const browser = await chromium.launch();
 		try {
-			for (const template of discoveredTemplates) {
-				templates.push(await renderTemplatePreview(browser, template));
-			}
+			// Each render has its own browser context, so they can run concurrently
+			templates.push(
+				...(await Promise.all(
+					discoveredTemplates.map((template) => renderTemplatePreview(browser, template))
+				))
+			);
 
-			for (const route of routes) {
-				const fixture = readJson<RouteFixture>(fixtureFileFor(route.urlPath));
-				const stateNames = Object.keys(fixture.states ?? {}).sort();
-				if (stateNames.length === 0) {
-					throw new Error(
-						`make docs: fixture ${toPosix(relative(REPO_ROOT, fixtureFileFor(route.urlPath)))} declares no states`
-					);
-				}
-
-				const apiKeys = new Set<string>();
-				const states: StateEntry[] = [];
-				for (const stateName of stateNames) {
-					const state = fixture.states[stateName];
-					const { entry, requestedApis } = await renderState(
-						browser,
-						route,
-						fixture,
-						stateName,
-						state,
-						shared
-					);
-					for (const key of requestedApis) apiKeys.add(key);
-					states.push(entry);
-				}
-
-				routeEntries.push({
-					path: route.urlPath,
-					title: fixture.title,
-					description: fixture.description,
-					auth: route.auth,
-					sourceFile: route.sourceFile,
-					fixture: toPosix(relative(REPO_ROOT, fixtureFileFor(route.urlPath))),
-					apis: [...apiKeys].sort(),
-					states
-				});
-			}
+			routeEntries.push(
+				...(await Promise.all(routes.map((route) => renderRoute(browser, route, shared))))
+			);
 		} finally {
 			await browser.close();
 		}
@@ -828,7 +845,9 @@ async function main(): Promise<void> {
 	console.log(`==> make docs: wrote ${routeEntries.length} route(s) to docs/routes.json`);
 }
 
-main().catch((err: unknown) => {
-	console.error(err);
+try {
+	await main();
+} catch (error) {
+	console.error(error);
 	process.exit(1);
-});
+}

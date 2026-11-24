@@ -21,7 +21,7 @@ function OtpComponent() {
 
 	// No email means hard refresh; restart the flow
 	useEffect(() => {
-		if (!email) void navigate({ to: '/login' });
+		if (!email) navigate({ to: '/login' });
 	}, [email, navigate]);
 
 	const [code, setCode] = useState('');

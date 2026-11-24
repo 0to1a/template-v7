@@ -26,14 +26,13 @@ function ProfileComponent() {
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: ['profile'] })
 	});
 
-	// Sync-on-first-load only; refetch wont clobber typing
-	const [displayName, setDisplayName] = useState('');
-	const [syncedEmail, setSyncedEmail] = useState<string | null>(null);
+	// Server value until the user types; refetch won't clobber typing. ?? keeps a cleared field empty
+	const [draft, setDraft] = useState<string | null>(null);
+	const displayName = draft ?? profileQuery.data?.display_name ?? '';
 	const [saved, setSaved] = useState(false);
-	if (profileQuery.data && syncedEmail === null) {
-		setSyncedEmail(profileQuery.data.email);
-		setDisplayName(profileQuery.data.display_name);
-	}
+
+	let description = profileQuery.data?.email ?? 'Loading…';
+	if (profileQuery.isError) description = 'Could not load your profile.';
 
 	async function submit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -53,13 +52,7 @@ function ProfileComponent() {
 				<Card>
 					<CardHeader>
 						<CardTitle>Your profile</CardTitle>
-						<CardDescription>
-							{profileQuery.isPending
-								? 'Loading…'
-								: profileQuery.isError
-									? 'Could not load your profile.'
-									: profileQuery.data.email}
-						</CardDescription>
+						<CardDescription>{description}</CardDescription>
 					</CardHeader>
 					<CardContent>
 						<form className="flex flex-col gap-4" onSubmit={submit}>
@@ -70,7 +63,7 @@ function ProfileComponent() {
 									name="display_name"
 									disabled={profileQuery.isPending}
 									value={displayName}
-									onChange={(event) => setDisplayName(event.target.value)}
+									onChange={(event) => setDraft(event.target.value)}
 								/>
 							</div>
 
